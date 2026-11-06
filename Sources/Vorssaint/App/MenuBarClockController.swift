@@ -7,7 +7,8 @@ import AppKit
 /// readings and be arranged with them: two lines, the time large below and
 /// a compact date above, formatted for the current locale and the system's
 /// 12/24-hour choice from the `menuBarClockDateFormat` ("MdEEE": "11/6
-/// (목)") and `menuBarClockTimeFormat` ("jmm": "15:42") templates. An empty
+/// (목)") and `menuBarClockTimeFormat` ("Hmm": "15:42", always 24-hour;
+/// "jmm" follows the system's hour cycle) templates. An empty
 /// date template leaves the time alone on one line. `menuBarClock -bool NO`
 /// turns the item off at the next launch.
 final class MenuBarClockController {
@@ -26,7 +27,7 @@ final class MenuBarClockController {
         dateFormatter.setLocalizedDateFormatFromTemplate(
             UserDefaults.standard.string(forKey: "menuBarClockDateFormat") ?? "MdEEE")
         timeFormatter.setLocalizedDateFormatFromTemplate(
-            UserDefaults.standard.string(forKey: "menuBarClockTimeFormat") ?? "jmm")
+            UserDefaults.standard.string(forKey: "menuBarClockTimeFormat") ?? "Hmm")
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(clicked)
