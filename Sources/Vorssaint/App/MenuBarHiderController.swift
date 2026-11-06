@@ -19,7 +19,7 @@ import SwiftUI
 /// together. Listing the hidden icons needs Accessibility; hiding does not.
 final class MenuBarHiderController: NSObject {
     private let statusItem: NSStatusItem
-    private let popover = NSPopover()
+    private let tray = TrayPanel()
     private let ownBundleID = Bundle.main.bundleIdentifier ?? ""
     /// Non-nil while other apps' icons are hidden.
     private var assertion: NativeMenuBarVisibility.Assertion?
@@ -34,7 +34,6 @@ final class MenuBarHiderController: NSObject {
         statusItem.autosaveName = "VorssaintMenuBarHider"
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
-        popover.behavior = .transient
         updateIcon()
         collapse()
     }
@@ -107,21 +106,16 @@ final class MenuBarHiderController: NSObject {
     // MARK: - Tray
 
     @objc private func togglePopover() {
-        if popover.isShown { return popover.performClose(nil) }
-        guard let button = statusItem.button else { return }
-        popover.contentViewController = NSHostingController(rootView: HiddenAppsTray(
+        if tray.isVisible { return tray.close() }
+        guard let buttonFrame = statusItem.button?.window?.frame else { return }
+        let close: () -> Void = { [weak self] in self?.tray.close() }
+        tray.show(HiddenAppsTray(
             state: trayState(),
-            onOpen: { [weak self] extra in
-                self?.popover.performClose(nil)
-                self?.open(extra)
-            },
-            onShowAll: { [weak self] in self?.popover.performClose(nil); self?.expand() },
-            onHideOthers: { [weak self] in self?.popover.performClose(nil); self?.collapse() },
-            onRequestAccess: { [weak self] in
-                self?.popover.performClose(nil)
-                Permissions.shared.requestAccessibility()
-            }))
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            onOpen: { [weak self] extra in close(); self?.open(extra) },
+            onShowAll: { [weak self] in close(); self?.expand() },
+            onHideOthers: { [weak self] in close(); self?.collapse() },
+            onRequestAccess: { close(); Permissions.shared.requestAccessibility() }),
+                  under: buttonFrame)
     }
 
     private func trayState() -> HiddenAppsTray.State {
@@ -247,6 +241,81 @@ final class MenuBarExtra: NSObject {
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
         return value as? String
     }
+}
+
+// MARK: - The panel the tray opens in
+
+/// A borderless panel that opens flush under the menu bar like a menu, rather
+/// than an NSPopover, whose arrow and inset leave the tray hanging low.
+/// Closes on Escape, on a click anywhere else, or when the app loses focus.
+private final class TrayPanel: NSPanel {
+    private var outsideClickMonitor: Any?
+    private var localKeyMonitor: Any?
+
+    init() {
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                   backing: .buffered, defer: true)
+        // Reused for every opening, so closing must not free it.
+        isReleasedWhenClosed = false
+        isFloatingPanel = true
+        level = .popUpMenu
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = true
+        hidesOnDeactivate = false
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+    }
+
+    override var canBecomeKey: Bool { true }
+
+    func show<Content: View>(_ content: Content, under buttonFrame: NSRect) {
+        let host = NSHostingView(rootView: content
+            .background(VisualEffectBackground())
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)))
+        contentView = host
+        let size = host.fittingSize
+        let screen = NSScreen.screens.first { $0.frame.contains(buttonFrame.origin) } ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? buttonFrame
+        // Just under the bar, centred on the item, kept on screen.
+        var x = buttonFrame.midX - size.width / 2
+        x = min(max(x, visible.minX + 8), visible.maxX - size.width - 8)
+        let y = min(buttonFrame.minY, visible.maxY) - 5 - size.height
+        setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+        makeKeyAndOrderFront(nil)
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.close()
+        }
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard event.keyCode == 53 else { return event }   // Escape
+            self?.close()
+            return nil
+        }
+    }
+
+    override func close() {
+        if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
+        if let localKeyMonitor { NSEvent.removeMonitor(localKeyMonitor) }
+        outsideClickMonitor = nil
+        localKeyMonitor = nil
+        super.close()
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        close()
+    }
+}
+
+private struct VisualEffectBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .popover
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 // MARK: - The tray under the hider item

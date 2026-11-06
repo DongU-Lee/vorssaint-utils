@@ -4,69 +4,95 @@
 import AppKit
 
 /// Menu bar glyphs for the "Icons" appearance and the hidden-apps tray, one
-/// family so the tray, CPU, GPU, RAM and disk read alike: Lucide
-/// (https://lucide.dev, ISC License, Copyright (c) Lucide Contributors 2022;
-/// portions Copyright (c) Cole Bemis 2013-2022 as part of Feather, MIT).
-/// Redrawn on Lucide's shapes in the Vorssaint mark's manner, a solid mass
-/// with thin lines around it: outlines at a heavy weight, the core part (die,
-/// chips, fan hubs, top layer) filled, fine detail at a hairline weight.
-/// Drawn as template images.
+/// family so the tray, CPU, GPU, RAM and disk read alike.
 ///
-/// Lucide over Phosphor: Phosphor's graphics card and memory are both a board
-/// with two shapes on it and could not be told apart at 15 pt; Lucide's card
-/// has fans and a bracket, its memory stick vertical chips.
+/// The shapes are MingCute icons (https://github.com/Richard9394/MingCute,
+/// Apache License 2.0, Copyright (c) Richard9394), unmodified SVG. Each glyph
+/// is drawn two-tone: the filled variant at a low opacity under the line
+/// variant, which gives the shapes body at menu bar size without a second
+/// color. The result is a template image, so macOS tints it for light and
+/// dark menu bars like its own items.
 enum MenuBarMetricGlyphs {
     private static let cache = NSCache<NSString, NSImage>()
 
-    /// Every glyph is drawn in a square of this side; the battery body matches
-    /// its height and the stroke matches the glyphs' at this size.
-    static let side: CGFloat = 15
-    /// The two weights every glyph uses, in points at `side`.
-    static let stroke: CGFloat = 2.6 / 24 * 15
-    static let hairline: CGFloat = 1.3 / 24 * 15
+    /// Every glyph is drawn in a square of this side.
+    static let side: CGFloat = 16
+    /// The opacity of the filled layer under the line.
+    private static let underlayOpacity: CGFloat = 0.18
 
-    /// The template glyph for a usage label (CPU, GPU, RAM, DSK) or for the
-    /// tray (TRAY, WARN).
+    /// The two-tone template glyph for a usage label (CPU, GPU, RAM, DSK) or
+    /// for the tray (TRAY, WARN), sized to `side`.
     static func image(for label: String) -> NSImage? {
         if let cached = cache.object(forKey: label as NSString) { return cached }
-        guard let image = NSImage(data: Data(svg(for: label).utf8)) else { return nil }
+        let (line, fill) = svgs(for: label)
+        guard let lineImage = NSImage(data: Data(line.utf8)),
+              let fillImage = NSImage(data: Data(fill.utf8)) else { return nil }
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { bounds in
+            fillImage.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: underlayOpacity)
+            lineImage.draw(in: bounds)
+            return true
+        }
         image.isTemplate = true
         cache.setObject(image, forKey: label as NSString)
         return image
     }
 
-    private static func svg(for label: String) -> String {
+    private static func svgs(for label: String) -> (line: String, fill: String) {
         switch label {
-        case "CPU": return cpu
-        case "GPU": return gpu
-        case "RAM": return memory
-        case "TRAY": return stack
-        case "WARN": return warning
-        default: return hardDrive
+        case "CPU": return (chipLine, chipFill)
+        case "GPU": return (gpuLine, gpuFill)
+        case "RAM": return (memoryStickLine, memoryStickFill)
+        case "TRAY": return (grid2Line, grid2Fill)
+        case "WARN": return (warningLine, warningFill)
+        default: return (storageLine, storageFill)
         }
     }
 
-    private static let cpu = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3.2" stroke-width="2.6"/><rect x="8.6" y="8.6" width="6.8" height="6.8" rx="1.3" fill="#000" stroke="none"/><path stroke-width="1.3" d="M9 1.6v2.4M12 1.6v2.4M15 1.6v2.4M9 20v2.4M12 20v2.4M15 20v2.4M1.6 9h2.4M1.6 12h2.4M1.6 15h2.4M20 9h2.4M20 12h2.4M20 15h2.4"/></svg>
+    private static let chipLine = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M16 14.057c-.063 1.1-.843 1.88-1.943 1.943H9.943c-.445-.026-.846-.153-1.198-.435c-.47-.377-.711-.915-.745-1.508V9.943c.026-.445.153-.846.435-1.198c.377-.47.915-.711 1.508-.745h4.114c1.1.063 1.88.843 1.943 1.943Zm-5.994-4.051v3.988h3.988v-3.988ZM20 8h1l.259.034c.842.226.996 1.396.241 1.832c-.398.23-1.148.134-1.5.134v4h1l.259.034c.842.226.996 1.396.241 1.832c-.398.23-1.148.134-1.5.134c0 .262.028 1.092-.036 1.485a3.03 3.03 0 0 1-2.479 2.479c-.393.064-1.223.036-1.485.036v1l-.034.259c-.226.842-1.396.996-1.832.241c-.23-.398-.134-1.148-.134-1.5h-4v1l-.034.259c-.226.842-1.396.996-1.832.241C7.904 21.102 8 20.352 8 20c-.262 0-1.092.028-1.485-.036a3.03 3.03 0 0 1-2.479-2.479C3.972 17.092 4 16.262 4 16H3l-.259-.034c-.842-.226-.996-1.396-.241-1.832C2.898 13.904 3.648 14 4 14v-4H3l-.259-.034C1.899 9.74 1.745 8.57 2.5 8.134C2.898 7.904 3.648 8 4 8c0-.262-.028-1.092.036-1.485a3.03 3.03 0 0 1 2.479-2.479C6.908 3.972 7.738 4 8 4V3l.034-.259c.226-.842 1.396-.996 1.832-.241c.23.398.134 1.148.134 1.5h4c0-.352-.096-1.102.134-1.5c.436-.755 1.606-.601 1.832.241L16 3v1c.262 0 1.092-.028 1.485.036a3.03 3.03 0 0 1 2.479 2.479C20.028 6.908 20 7.738 20 8M6.836 6.016c-.515.085-.816.527-.836 1.024v9.92c.011.283.09.54.295.745s.462.284.745.295h9.92c.283-.011.54-.09.745-.295s.284-.462.295-.745V7.04c-.025-.622-.418-1.015-1.04-1.04H7.04Z"/></svg>
     """
 
-    private static let gpu = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="2.6" d="M4.6 17H20a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H4.6z"/><path stroke-width="1.3" d="M2 3.2v17.6M2 5h2.6M7.4 17v3a1 1 0 0 0 1 1h4.6a1 1 0 0 0 1-1v-3"/><circle cx="9.4" cy="11" r="2.6" stroke-width="1.3"/><circle cx="16.6" cy="11" r="2.6" stroke-width="1.3"/><circle cx="9.4" cy="11" r="1.15" fill="#000" stroke="none"/><circle cx="16.6" cy="11" r="1.15" fill="#000" stroke="none"/></svg>
+    private static let chipFill = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M14 14h-4v-4h4Zm2-10c.225 0 1.039-.022 1.407.027a3.03 3.03 0 0 1 2.566 2.566C20.022 6.961 20 7.775 20 8h1l.229.026c.797.186 1.033 1.244.396 1.754A1.04 1.04 0 0 1 21 10h-1v4h1l.229.026c.797.186 1.033 1.244.396 1.754A1.04 1.04 0 0 1 21 16h-1c0 .225.022 1.039-.027 1.407a3.03 3.03 0 0 1-2.566 2.566c-.368.049-1.182.027-1.407.027v1a1.04 1.04 0 0 1-.22.625c-.51.637-1.568.401-1.754-.396L14 21v-1h-4v1a1.04 1.04 0 0 1-.22.625c-.51.637-1.568.401-1.754-.396L8 21v-1c-.225 0-1.039.022-1.407-.027a3.03 3.03 0 0 1-2.566-2.566C3.978 17.039 4 16.225 4 16H3a1.04 1.04 0 0 1-.625-.22c-.637-.51-.401-1.568.396-1.754L3 14h1v-4H3a1.04 1.04 0 0 1-.625-.22c-.637-.51-.401-1.568.396-1.754L3 8h1c0-.225-.022-1.039.027-1.407a3.03 3.03 0 0 1 2.566-2.566C6.961 3.978 7.775 4 8 4V3l.026-.229c.186-.797 1.244-1.033 1.754-.396c.149.184.207.392.22.625v1h4V3l.026-.229c.186-.797 1.244-1.033 1.754-.396c.149.184.207.392.22.625Zm-6 4c-1.146.046-1.954.854-2 2v4c.017.43.129.83.386 1.181c.385.526.973.793 1.614.819h4c.43-.017.83-.129 1.181-.386c.526-.385.793-.973.819-1.614v-4c-.046-1.146-.854-1.954-2-2Z"/></svg>
     """
 
-    private static let memory = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="10" rx="2.2" stroke-width="2.6"/><g fill="#000" stroke="none"><rect x="5" y="8.6" width="2.6" height="4.8" rx="0.6"/><rect x="9.1" y="8.6" width="2.6" height="4.8" rx="0.6"/><rect x="13.2" y="8.6" width="2.6" height="4.8" rx="0.6"/><rect x="17.3" y="8.6" width="1.8" height="4.8" rx="0.6"/></g><path stroke-width="1.3" d="M5 17.3v2.4M8 17.3v2.4M11 17.3v2.4M14 17.3v2.4M17 17.3v2.4M20 17.3v2.4"/></svg>
+    private static let gpuLine = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M6.741 13.966c-.842-.226-.996-1.396-.241-1.832c.175-.101.302-.121.5-.134h3c.451.03.844.288.966.741c.176.656-.327 1.217-.966 1.259H7Zm8.4.006a2.5 2.5 0 0 1-1.495-.798c-1.582-1.723-.068-4.453 2.213-4.146a2.5 2.5 0 0 1 1.495.798c1.582 1.723.068 4.453-2.213 4.146m.268-2.96c-.645.168-.449 1.091.182.976c.659-.121.425-1.134-.182-.976m-8.668-.046c-.842-.226-.996-1.396-.241-1.832c.175-.101.302-.121.5-.134h2c.36.024.68.178.866.5c.132.228.168.504.1.759c-.122.453-.515.711-.966.741H7Zm-1.747 7.04L4 18v2c-.013.198-.033.325-.134.5a1 1 0 0 1-.607.466C2.603 21.142 2.042 20.639 2 20V4c.057-.869 1.052-1.362 1.707-.707c.197.196.275.436.293.707v1h16c.343.013.675.089.976.258c.639.358.997 1.021 1.024 1.742v9c-.042 1.135-.865 1.958-2 2h-7.943l-.051.006c-.028.244-.026.341-.091.56c-.253.859-1.037 1.402-1.915 1.434H7c-.878-.032-1.662-.575-1.915-1.434c-.065-.219-.063-.316-.091-.56m2.012-.012h2.988c.028-.244.026-.341.091-.56c.253-.859 1.037-1.402 1.915-1.434h7.943l.051-.006V7.006H4.006v8.988c.437.016.899-.037 1.338.039a2.01 2.01 0 0 1 1.571 1.401c.065.219.063.316.091.56"/></svg>
     """
 
-    private static let hardDrive = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="2.6" d="M2.2 11.6a2 2 0 0 0-.2.9V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5.5a2 2 0 0 0-.2-.9L18.55 5.1A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.1z"/><path stroke-width="1.3" d="M2.6 12h18.8"/><circle cx="6.4" cy="16" r="1.2" fill="#000" stroke="none"/><circle cx="10.2" cy="16" r="1.2" fill="#000" stroke="none"/></svg>
+    private static let gpuFill = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16c.325.013.628.072.919.223C21.597 5.574 21.97 6.252 22 7v9c-.046 1.146-.854 1.954-2 2h-8c-.023.285-.012.36-.102.632c-.276.833-1.042 1.334-1.898 1.368H7c-1.205-.049-1.906-.833-2-2H4v2a1.04 1.04 0 0 1-.22.625c-.609.76-1.727.298-1.78-.625V4c.053-.923 1.171-1.385 1.78-.625c.149.184.207.392.22.625Zm11.131 4.027a2.5 2.5 0 0 0-1.271.586c-1.871 1.627-.441 4.721 2.009 4.36a2.5 2.5 0 0 0 1.271-.586c1.871-1.627.441-4.721-2.009-4.36M7 12c-1.039.06-1.407 1.425-.44 1.898A1 1 0 0 0 7 14h3c.46-.026.865-.305.974-.771c.15-.645-.344-1.193-.974-1.229Zm0-3c-.923.053-1.385 1.171-.625 1.78c.184.149.392.207.625.22h2c.383-.022.725-.206.898-.56a1 1 0 0 0 0-.88C9.725 9.206 9.383 9.022 9 9Z"/></svg>
     """
 
-    private static let stack = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round"><path fill="#000" stroke="#000" stroke-width="1" d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path stroke-width="1.3" d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path stroke-width="1.3" d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>
+    private static let memoryStickLine = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M15.034 10.741c.196-.73 1.139-.983 1.673-.448c.197.196.275.436.293.707v1c-.018.271-.096.511-.293.707c-.25.25-.624.351-.966.259c-.453-.122-.711-.515-.741-.966v-1Zm-4 0c.196-.73 1.139-.983 1.673-.448c.197.196.275.436.293.707v1c-.018.271-.096.511-.293.707c-.25.25-.624.351-.966.259c-.453-.122-.711-.515-.741-.966v-1Zm-4 0c.196-.73 1.139-.983 1.673-.448c.197.196.275.436.293.707v1c-.018.271-.096.511-.293.707c-.25.25-.624.351-.966.259c-.453-.122-.711-.515-.741-.966v-1ZM17 17h-2v1l-.034.259c-.226.842-1.396.996-1.832.241c-.23-.398-.134-1.148-.134-1.5h-2c0 .352.096 1.102-.134 1.5c-.436.755-1.606.601-1.832-.241L9 18v-1H7v1l-.034.259c-.226.842-1.396.996-1.832.241C4.904 18.102 5 17.352 5 17c-.368 0-.923.04-1.344-.033C2.689 16.799 2.035 15.96 2 15v-1.38c.008-.206.038-.411.101-.608c.081-.254.211-.49.367-.705c.195-.267.593-.529.518-.905c-.042-.209-.228-.35-.358-.505a3 3 0 0 1-.438-.677A2.3 2.3 0 0 1 2 9.381V8c.027-.721.385-1.384 1.024-1.742c.301-.169.633-.245.976-.258h16c.96.035 1.799.689 1.967 1.656c.083.481.039 1.564.033 1.725a2.3 2.3 0 0 1-.101.608c-.081.254-.211.49-.367.705c-.177.243-.527.479-.527.806s.35.564.527.807c.156.215.286.451.367.705c.063.197.093.402.101.608V15c-.035.96-.689 1.799-1.656 1.967c-.421.073-.976.033-1.344.033c0 .352.096 1.102-.134 1.5c-.436.755-1.606.601-1.832-.241L17 18Zm2.994-8.994H4.006L4 8.057v1.257l.008.063c.054.185.246.331.364.472c.411.492.655 1.1.623 1.748a2.6 2.6 0 0 1-.622 1.554c-.118.142-.311.288-.365.473L4 13.687v1.256l.006.051h15.988l.006-.051v-1.256l-.008-.063c-.054-.185-.247-.331-.365-.473c-.41-.491-.654-1.1-.622-1.748a2.58 2.58 0 0 1 .623-1.554c.118-.141.31-.287.364-.472L20 9.314V8.057Z"/></svg>
     """
 
-    private static let warning = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="m21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4m0 4h.01"/></svg>
+    private static let memoryStickFill = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M19 17v1a1.04 1.04 0 0 1-.22.625c-.51.637-1.568.401-1.754-.396L17 18v-1h-2v1a1.04 1.04 0 0 1-.22.625c-.51.637-1.568.401-1.754-.396L13 18v-1h-2v1a1.04 1.04 0 0 1-.22.625c-.51.637-1.568.401-1.754-.396L9 18v-1H7v1l-.026.229c-.186.797-1.244 1.033-1.754.396A1.04 1.04 0 0 1 5 18v-1c-.093 0-.998.027-1.324-.026C2.692 16.814 2.039 15.969 2 15v-1.38c.01-.241.024-.376.097-.605c.082-.258.217-.497.375-.715c.174-.24.528-.475.528-.8s-.355-.56-.528-.799l-.27-.45A2.2 2.2 0 0 1 2 9.381V8c.03-.748.403-1.426 1.081-1.777c.291-.151.594-.21.919-.223h16c.969.039 1.814.692 1.974 1.676L22 8v1.381a2.2 2.2 0 0 1-.202.87l-.27.45c-.173.239-.528.474-.528.799s.354.56.528.8c.158.218.293.457.375.715c.073.229.087.364.097.605V15c-.039.969-.692 1.814-1.676 1.974c-.326.053-1.231.026-1.324.026m-2.229-6.974c-.466.109-.745.514-.771.974v1c.036.63.584 1.124 1.229.974c.466-.109.745-.514.771-.974v-1c-.036-.63-.584-1.124-1.229-.974m-5 0c-.466.109-.745.514-.771.974v1c.036.63.584 1.124 1.229.974c.466-.109.745-.514.771-.974v-1c-.036-.63-.584-1.124-1.229-.974m-5 0c-.466.109-.745.514-.771.974v1c.036.63.584 1.124 1.229.974c.466-.109.745-.514.771-.974v-1c-.036-.63-.584-1.124-1.229-.974"/></svg>
+    """
+
+    private static let storageLine = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M7.741 17.966c-.842-.226-.996-1.396-.241-1.832c.175-.101.302-.121.5-.134h2c.36.024.68.178.866.5c.132.228.168.504.1.759c-.122.453-.515.711-.966.741H8Zm12.824-4.221c.282.352.409.753.435 1.198v4.114c-.043.745-.435 1.411-1.118 1.745c-.301.147-.499.179-.825.198H4.943c-.902-.052-1.687-.642-1.897-1.542L3 19.057v-4.114c.063-1.1.843-1.88 1.943-1.943h14.114c.593.034 1.131.275 1.508.745M5.006 15.006v3.988h13.988v-3.988Zm2.735-6.04C6.899 8.74 6.745 7.57 7.5 7.134c.175-.101.302-.121.5-.134h2c.36.024.68.178.866.5c.132.228.168.504.1.759c-.122.453-.515.711-.966.741H8ZM21 10.057c-.063 1.1-.843 1.88-1.943 1.943H4.943c-1.1-.063-1.88-.843-1.943-1.943V5.943l.046-.401c.21-.9.995-1.49 1.897-1.542h14.114c1.1.063 1.88.843 1.943 1.943ZM5.006 6.006v3.988h13.988V6.006Z"/></svg>
+    """
+
+    private static let storageFill = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M19.324 13.026c.984.16 1.637 1.005 1.676 1.974v4c-.03.748-.403 1.426-1.081 1.777c-.291.151-.594.21-.919.223H5c-.856-.034-1.622-.535-1.898-1.368A2 2 0 0 1 3 19v-4c.046-1.146.854-1.954 2-2h14ZM7 16c-.923.053-1.385 1.171-.625 1.78c.184.149.392.207.625.22h2c.383-.022.725-.206.898-.56a1 1 0 0 0 0-.88c-.173-.354-.515-.538-.898-.56ZM19.324 4.026C20.308 4.186 20.961 5.031 21 6v4c-.03.748-.403 1.426-1.081 1.777c-.291.151-.594.21-.919.223H5c-.856-.034-1.622-.535-1.898-1.368A2 2 0 0 1 3 10V6c.046-1.146.854-1.954 2-2h14ZM7 7c-.923.053-1.385 1.171-.625 1.78c.184.149.392.207.625.22h2c.383-.022.725-.206.898-.56a1 1 0 0 0 0-.88C9.725 7.206 9.383 7.022 9 7Z"/></svg>
+    """
+
+    private static let grid2Line = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M9.114 15.007c1.088.099 1.846.901 1.886 1.993v2c-.018.494-.18.961-.513 1.333c-.384.428-.918.646-1.487.667H5c-.569-.021-1.103-.239-1.487-.667C3.18 19.961 3.018 19.494 3 19v-2c.042-1.135.865-1.958 2-2h4Zm-4.108 1.999v1.988h3.988v-1.988Zm14.108-5.999c1.088.099 1.846.901 1.886 1.993v6c-.042 1.135-.865 1.958-2 2h-4a2.1 2.1 0 0 1-.976-.258c-.639-.358-.997-1.021-1.024-1.742v-6c.042-1.135.865-1.958 2-2h4Zm-4.108 1.999v5.988h3.988v-5.988ZM9.114 3.007C10.202 3.106 10.96 3.908 11 5v6c-.042 1.135-.865 1.958-2 2H5a2.1 2.1 0 0 1-.976-.258C3.385 12.384 3.027 11.721 3 11V5c.042-1.135.865-1.958 2-2h4ZM5.006 5.006v5.988h3.988V5.006Zm14.108-1.999C20.202 3.106 20.96 3.908 21 5v2c-.018.494-.18.961-.513 1.333c-.384.428-.918.646-1.487.667h-4c-.569-.021-1.103-.239-1.487-.667C13.18 7.961 13.018 7.494 13 7V5c.042-1.135.865-1.958 2-2h4Zm-4.108 1.999v1.988h3.988V5.006Z"/></svg>
+    """
+
+    private static let grid2Fill = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M9.324 15.026c.984.16 1.637 1.005 1.676 1.974v2c-.022.535-.202 1.03-.586 1.414S9.535 20.978 9 21H5c-.535-.022-1.03-.202-1.414-.586S3.022 19.535 3 19v-2c.046-1.146.854-1.954 2-2h4Zm10-4c.984.16 1.637 1.005 1.676 1.974v6c-.046 1.146-.854 1.954-2 2h-4a2.1 2.1 0 0 1-.919-.223C13.403 20.426 13.03 19.748 13 19v-6c.046-1.146.854-1.954 2-2h4Zm-10-8C10.308 3.186 10.961 4.031 11 5v6c-.046 1.146-.854 1.954-2 2H5a2.1 2.1 0 0 1-.919-.223C3.403 12.426 3.03 11.748 3 11V5c.046-1.146.854-1.954 2-2h4Zm10 0C20.308 3.186 20.961 4.031 21 5v2c-.022.535-.202 1.03-.586 1.414S19.535 8.978 19 9h-4c-.535-.022-1.03-.202-1.414-.586S13.022 7.535 13 7V5c.046-1.146.854-1.954 2-2h4Z"/></svg>
+    """
+
+    private static let warningLine = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M11.741 16.966a1 1 0 0 1-.607-.466c-.439-.76.29-1.69 1.127-1.466c.254.068.475.238.607.466c.439.76-.29 1.69-1.127 1.466m-.707-10.225c.262-.978 1.67-.978 1.932 0L13 7v6c-.03.451-.288.844-.741.966c-.656.176-1.217-.327-1.259-.966V7Zm7.775 12.584a10 10 0 0 1-3.791 2.212a10.1 10.1 0 0 1-4.563.345a10 10 0 0 1-3.503-1.247C1.179 17.254.289 9.233 5.192 4.675a10 10 0 0 1 3.79-2.212a10.1 10.1 0 0 1 4.563-.345a10 10 0 0 1 3.503 1.247c5.773 3.381 6.663 11.402 1.761 15.96m-7.435-15.3a8 8 0 0 0-4.377 1.733C2.03 9.744 3.51 17.709 9.585 19.629a8 8 0 0 0 7.418-1.387c4.967-3.985 3.487-11.951-2.588-13.871a8.1 8.1 0 0 0-3.041-.346"/></svg>
+    """
+
+    private static let warningFill = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12.746 2.027a10 10 0 0 1 4.699 1.584c5.563 3.618 6.124 11.579 1.116 15.936a10 10 0 0 1-2.998 1.8a10.1 10.1 0 0 1-4.309.626a10 10 0 0 1-4.699-1.584C.992 16.771.431 8.81 5.439 4.453a10 10 0 0 1 2.998-1.8a10.1 10.1 0 0 1 4.309-.626M12 15c-1.432.163-1.225 2.001.002 2c1.049-.001 1.382-1.438.44-1.898c-.111-.055-.317-.116-.442-.102m-.229-8.974c-.466.109-.745.514-.771.974v6c.031.544.431 1 1 1s.969-.456 1-1V7c-.036-.63-.584-1.124-1.229-.974"/></svg>
     """
 }

@@ -3,13 +3,13 @@
 
 import AppKit
 
-/// The "Icons" menu bar appearance: CPU, GPU, RAM and disk usage as one icon
-/// each with a colored gauge on its right that fills with the reading; the
-/// battery the same way, with its percentage inside the battery outline.
+/// The "Icons" menu bar appearance: CPU, GPU, RAM and disk usage as a two-tone
+/// glyph with a gauge arc hugging its right side, and the battery as a battery
+/// outline with its percentage inside.
 ///
-/// The glyphs come from one icon family (MenuBarMetricGlyphs) and draw in the
-/// label color so they follow light and dark menu bars; only the gauges carry
-/// color.
+/// Everything draws in the label color, like the system's own items; color
+/// only ever marks a warning (high load, low battery), and only on the gauge
+/// or the battery number.
 extension MenuBarRenderer {
     private static let ringCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
@@ -17,7 +17,14 @@ extension MenuBarRenderer {
         return cache
     }()
 
-    /// Usage rings move in 2% steps, so a jittery reading reuses images.
+    // Gauge geometry, in points.
+    private static let gaugeRadius: CGFloat = 7.5        // as tall as the glyph
+    private static let gaugeSweep: CGFloat = 70          // degrees either side of three o'clock
+    private static let gaugeWidth: CGFloat = 2
+    private static let gaugeGap: CGFloat = 1.5           // glyph edge to the arc's inner side
+    private static let gaugeMinimumDegrees: CGFloat = 8  // a 0% reading still shows a dot
+
+    /// Usage gauges move in 2% steps, so a jittery reading reuses images.
     static func cachedRingImage(label: String, fraction: Double?, style: MenuBarBlockStyle) -> NSImage {
         let step = fraction.map { Int((MenuBarUsageBarSupport.clampedFraction($0) * 50).rounded()) }
         let key = "ring|\(label)|\(step.map(String.init) ?? "-")|\(style)" as NSString
@@ -37,39 +44,19 @@ extension MenuBarRenderer {
         return image
     }
 
-    static func ringColor(for label: String) -> NSColor {
-        switch label {
-        case "CPU": return NSColor(srgbRed: 0.04, green: 0.52, blue: 1.00, alpha: 1)  // blue
-        case "GPU": return NSColor(srgbRed: 0.19, green: 0.82, blue: 0.35, alpha: 1)  // green
-        case "RAM": return NSColor(srgbRed: 0.75, green: 0.35, blue: 0.95, alpha: 1)  // purple
-        default: return NSColor(srgbRed: 1.00, green: 0.62, blue: 0.04, alpha: 1)     // orange (disk)
-        }
-    }
-
-    /// The glyph on the left, and a gauge arc hugging its right side that
-    /// fills from the bottom up with the reading.
     static func ringImage(label: String, fraction: Double?, style: MenuBarBlockStyle) -> NSImage {
         let height: CGFloat = style == .readable ? 22 : 20
-        let glyphSide = MenuBarMetricGlyphs.side
-        let gaugeWidth = gaugeLineWidth
-        let radius: CGFloat = glyphSide / 2 + 4
-        let center = NSPoint(x: 1 + glyphSide / 2, y: height / 2)
-        let width = ceil(center.x + radius + gaugeWidth / 2 + 0.5)
+        let side = MenuBarMetricGlyphs.side
+        let glyphRect = NSRect(x: 0.5, y: (height - side) / 2, width: side, height: side)
+        // The arc's ends are its innermost points; place them gaugeGap off the glyph.
+        let innerReach = gaugeRadius * cos(gaugeSweep * .pi / 180) - gaugeWidth / 2
+        let center = NSPoint(x: glyphRect.maxX + gaugeGap - innerReach, y: height / 2)
+        let width = ceil(center.x + gaugeRadius + gaugeWidth / 2 + 0.5)
 
         let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
-            drawGauge(center: center, radius: radius, fraction: fraction, color: ringColor(for: label))
-
+            drawGauge(center: center, fraction: fraction)
             if let glyph = MenuBarMetricGlyphs.image(for: label) {
-                let box = NSRect(x: center.x - glyphSide / 2, y: center.y - glyphSide / 2,
-                                 width: glyphSide, height: glyphSide)
-                // Tinted on its own so the fill does not spill onto the gauge.
-                let tinted = NSImage(size: box.size, flipped: false) { bounds in
-                    glyph.draw(in: bounds)
-                    NSColor.labelColor.set()
-                    bounds.fill(using: .sourceAtop)
-                    return true
-                }
-                tinted.draw(in: box)
+                tinted(glyph, size: glyphRect.size).draw(in: glyphRect)
             }
             return true
         }
@@ -78,53 +65,64 @@ extension MenuBarRenderer {
         return image
     }
 
-    /// The battery in the same shape as the other readings: a battery outline
-    /// in the glyph's square with the percentage inside, and the gauge on its
-    /// right filling with the charge. Green, red when low; while charging a
-    /// bolt takes the place of the terminal.
+    /// A faint track and the level filling it from the bottom up; orange from
+    /// 85%, red from 95%.
+    private static func drawGauge(center: NSPoint, fraction: Double?) {
+        let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let track = NSBezierPath()
+        track.appendArc(withCenter: center, radius: gaugeRadius, startAngle: -gaugeSweep, endAngle: gaugeSweep)
+        track.lineWidth = gaugeWidth
+        track.lineCapStyle = .round
+        NSColor.labelColor.withAlphaComponent(isDark ? 0.30 : 0.22).setStroke()
+        track.stroke()
+
+        guard let fraction else { return }
+        let value = MenuBarUsageBarSupport.clampedFraction(fraction)
+        let degrees = max(gaugeMinimumDegrees, 2 * gaugeSweep * CGFloat(value))
+        let level = NSBezierPath()
+        level.appendArc(withCenter: center, radius: gaugeRadius, startAngle: -gaugeSweep,
+                        endAngle: -gaugeSweep + degrees)
+        level.lineWidth = gaugeWidth
+        level.lineCapStyle = .round
+        (value >= 0.95 ? NSColor.systemRed : value >= 0.85 ? NSColor.systemOrange : NSColor.labelColor).setStroke()
+        level.stroke()
+    }
+
+    /// A battery outline with the percentage inside, the terminal at half
+    /// strength. While charging a bolt takes the terminal's place; when low the
+    /// number turns red.
     static func ringBatteryImage(percent: Int, isCharging: Bool, isLow: Bool, style: MenuBarBlockStyle) -> NSImage {
         let height: CGFloat = style == .readable ? 22 : 20
-        let side = MenuBarMetricGlyphs.side
-        let stroke = MenuBarMetricGlyphs.stroke
-        let center = NSPoint(x: 1 + side / 2, y: height / 2)
-        let radius = side / 2 + 4
-        let width = ceil(center.x + radius + 1.1 + 0.5)
+        let body = NSRect(x: 0.5, y: (height - 11) / 2, width: 21, height: 11)
+        let width = ceil(body.maxX + 1 + 4 + 0.5)
         let low = isLow || (percent <= 20 && !isCharging)
-        let green = NSColor(srgbRed: 0.19, green: 0.82, blue: 0.35, alpha: 1)
-        let red = NSColor(srgbRed: 1.00, green: 0.27, blue: 0.23, alpha: 1)
 
         let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
-            drawGauge(center: center, radius: radius, fraction: Double(percent) / 100, color: low ? red : green)
-
-            let body = NSRect(x: center.x - side / 2 + 0.3, y: center.y - 5.6, width: side - 0.8, height: 11.2)
-            let outline = NSBezierPath(roundedRect: body.insetBy(dx: stroke / 2, dy: stroke / 2), xRadius: 3, yRadius: 3)
-            outline.lineWidth = stroke
+            let border: CGFloat = 1.25
+            let outline = NSBezierPath(roundedRect: body.insetBy(dx: border / 2, dy: border / 2), xRadius: 3, yRadius: 3)
+            outline.lineWidth = border
             NSColor.labelColor.setStroke()
             outline.stroke()
 
             if isCharging, let bolt = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 6.5, weight: .black)
-                    .applying(NSImage.SymbolConfiguration(paletteColors: [green]))) {
-                bolt.draw(in: NSRect(x: body.maxX + 0.2, y: center.y - bolt.size.height / 2,
-                                     width: bolt.size.width, height: bolt.size.height))
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 7, weight: .bold)) {
+                let boltRect = NSRect(x: body.maxX + 0.8, y: body.midY - 3.5, width: 4, height: 7)
+                tinted(bolt, size: boltRect.size).draw(in: boltRect)
             } else {
-                let nub = NSBezierPath()
-                nub.move(to: NSPoint(x: body.maxX + 1.3, y: center.y - 1.6))
-                nub.line(to: NSPoint(x: body.maxX + 1.3, y: center.y + 1.6))
-                nub.lineWidth = stroke
-                nub.lineCapStyle = .round
-                nub.stroke()
+                NSColor.labelColor.withAlphaComponent(0.5).setFill()
+                NSBezierPath(roundedRect: NSRect(x: body.maxX + 1, y: body.midY - 2, width: 1.5, height: 4),
+                             xRadius: 0.75, yRadius: 0.75).fill()
             }
 
-            var font = NSFont.systemFont(ofSize: percent >= 100 ? 6.5 : 7.5, weight: .heavy)
+            var font = NSFont.monospacedDigitSystemFont(ofSize: percent >= 100 ? 7.5 : 8.5, weight: .semibold)
             if let rounded = font.fontDescriptor.withDesign(.rounded) {
                 font = NSFont(descriptor: rounded, size: font.pointSize) ?? font
             }
-            let attributes: [NSAttributedString.Key: Any] = [.font: font, .kern: -0.2,
-                                                             .foregroundColor: low ? red : NSColor.labelColor]
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font, .foregroundColor: low ? NSColor.systemRed : NSColor.labelColor]
             let text = "\(percent)" as NSString
-            let textSize = text.size(withAttributes: attributes)
-            text.draw(at: NSPoint(x: body.midX - textSize.width / 2 + 0.1, y: center.y - textSize.height / 2),
+            let size = text.size(withAttributes: attributes)
+            text.draw(at: NSPoint(x: body.midX - size.width / 2, y: body.midY - size.height / 2),
                       withAttributes: attributes)
             return true
         }
@@ -133,27 +131,14 @@ extension MenuBarRenderer {
         return image
     }
 
-    private static let gaugeLineWidth: CGFloat = 2.2
-    /// Degrees either side of three o'clock.
-    private static let gaugeSweep: CGFloat = 55
-
-    /// The faint track and the colored level, filling from the bottom up.
-    private static func drawGauge(center: NSPoint, radius: CGFloat, fraction: Double?, color: NSColor) {
-        let track = NSBezierPath()
-        track.appendArc(withCenter: center, radius: radius, startAngle: -gaugeSweep, endAngle: gaugeSweep)
-        // Hairline track, heavy level: the same two weights as the glyphs.
-        track.lineWidth = MenuBarMetricGlyphs.hairline
-        track.lineCapStyle = .round
-        NSColor.labelColor.withAlphaComponent(0.28).setStroke()
-        track.stroke()
-
-        guard let fraction, fraction > 0 else { return }
-        let level = NSBezierPath()
-        level.appendArc(withCenter: center, radius: radius, startAngle: -gaugeSweep,
-                        endAngle: -gaugeSweep + 2 * gaugeSweep * CGFloat(min(fraction, 1)))
-        level.lineWidth = gaugeLineWidth
-        level.lineCapStyle = .round
-        color.setStroke()
-        level.stroke()
+    /// A template image filled with the label color of the current drawing
+    /// appearance.
+    private static func tinted(_ template: NSImage, size: NSSize) -> NSImage {
+        NSImage(size: size, flipped: false) { bounds in
+            template.draw(in: bounds)
+            NSColor.labelColor.set()
+            bounds.fill(using: .sourceAtop)
+            return true
+        }
     }
 }
