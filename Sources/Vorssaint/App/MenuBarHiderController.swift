@@ -327,9 +327,9 @@ final class MenuBarExtra: NSObject {
     /// A real click at the icon's centre, which the app answers exactly as
     /// it would in the bar. On macOS 27 the whole menu bar is one Window
     /// Server window and apps own no window for their icon, so a click can
-    /// only arrive through the pointer: it moves to the icon, clicks, and is
-    /// put back once the app has had time to take the click (some, OneDrive
-    /// among them, check the pointer is over their icon as they open).
+    /// only arrive through the pointer: it moves to the icon (hidden), clicks,
+    /// and is put back once the app has answered (some, OneDrive among them,
+    /// check the pointer is over their icon as they open).
     /// Without a placed frame a right click is still tried there, and a left
     /// click falls back to the accessibility press.
     func click(right: Bool, placed: Bool) {
@@ -339,6 +339,7 @@ final class MenuBarExtra: NSObject {
         let pointer = CGEvent(source: nil)?.location
         // The trip to the icon is hidden, so the pointer seems to stay put.
         let hidden = PointerVisibility.hide()
+        let windowsBefore = Self.windowNumbers(of: pid)
         for type in types {
             guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point,
                                       mouseButton: right ? .right : .left) else { continue }
@@ -347,10 +348,14 @@ final class MenuBarExtra: NSObject {
             event.post(tap: .cghidEventTap)
         }
         hiderLog.notice("\(right ? "right" : "left", privacy: .public) click on \(self.label, privacy: .public) sent")
-        let delay = UserDefaults.standard.object(forKey: "menuBarTrayPointerReturnDelay") as? Double ?? 0.4
+        // Back as soon as the app answers with a new window (its menu or
+        // panel), or after `menuBarTrayPointerReturnDelay` (0.4 s) at most.
+        let limit = UserDefaults.standard.object(forKey: "menuBarTrayPointerReturnDelay") as? Double ?? 0.4
+        let started = Date()
         let label = self.label
-        DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, 0.05)) {
-            if let pointer, delay > 0 {
+        let pid = self.pid
+        func returnPointer(answered: Bool) {
+            if let pointer, limit > 0 {
                 // A warp alone can be undone while the app's menu is tracking
                 // the mouse; a posted move is handled like a real one.
                 CGWarpMouseCursorPosition(pointer)
@@ -358,14 +363,32 @@ final class MenuBarExtra: NSObject {
                                    mouseButton: .left)
                 move?.setIntegerValueField(.eventSourceUserData, value: Self.postedMarker)
                 move?.post(tap: .cghidEventTap)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    let now = CGEvent(source: nil)?.location ?? .zero
-                    let back = hypot(now.x - pointer.x, now.y - pointer.y) < 2
-                    hiderLog.notice("pointer after \(label, privacy: .public): back \(back, privacy: .public) at \(now.x, privacy: .public),\(now.y, privacy: .public) wanted \(pointer.x, privacy: .public),\(pointer.y, privacy: .public)")
-                }
             }
             if hidden { PointerVisibility.show() }
+            let elapsed = Date().timeIntervalSince(started)
+            hiderLog.notice("pointer back after \(label, privacy: .public) in \(elapsed, format: .fixed(precision: 2), privacy: .public)s, \(answered ? "app answered" : "time limit", privacy: .public)")
         }
+        func poll() {
+            let elapsed = Date().timeIntervalSince(started)
+            if !Self.windowNumbers(of: pid).subtracting(windowsBefore).isEmpty {
+                // A moment for the app to finish reading where the click was.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { returnPointer(answered: true) }
+            } else if elapsed >= max(limit, 0.05) {
+                returnPointer(answered: false)
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: poll)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: poll)
+    }
+
+    /// The on-screen windows a process owns, menus and panels included.
+    private static func windowNumbers(of pid: pid_t) -> Set<CGWindowID> {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]
+        else { return [] }
+        return Set(windows.compactMap { window in
+            window[kCGWindowOwnerPID as String] as? pid_t == pid ? window[kCGWindowNumber as String] as? CGWindowID : nil
+        })
     }
 
     /// Tags the clicks posted above, so our own monitors can tell them from
