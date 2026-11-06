@@ -81,7 +81,7 @@ extension MenuBarRenderer {
     static func cachedRingBatteryImage(percent: Int, isCharging: Bool, isLow: Bool,
                                        style: MenuBarBlockStyle) -> NSImage {
         let percent = max(0, min(100, percent))
-        let key = "ringBattery|\(glyphSide)|\(gaugeStyle.rawValue)|\(coloredGauges)|\(percent)|\(isCharging)|\(isLow)|\(style)" as NSString
+        let key = "ringBattery|\(glyphSide)|\(batteryFullStyle.rawValue)|\(gaugeStyle.rawValue)|\(coloredGauges)|\(percent)|\(isCharging)|\(isLow)|\(style)" as NSString
         if let cached = ringCache.object(forKey: key) { return cached }
         let image = ringBatteryImage(percent: percent, isCharging: isCharging, isLow: isLow, style: style)
         ringCache.setObject(image, forKey: key)
@@ -112,29 +112,80 @@ extension MenuBarRenderer {
 
     /// The percentage where a glyph would be; a bolt beside it while
     /// charging, red arc and number when low.
+    /// How a full battery reads.
+    /// - condensed: "100" in a compressed face, the width of two digits.
+    /// - check: a check mark.
+    /// - checkPlug: a check mark, or a plug while still on power.
+    enum BatteryFullStyle: String { case condensed, check, checkPlug }
+
+    /// `defaults write <bundle id> menuBarBatteryFull check` switches it at the next launch.
+    static var batteryFullStyle: BatteryFullStyle = BatteryFullStyle(
+        rawValue: UserDefaults.standard.string(forKey: "menuBarBatteryFull") ?? "") ?? .checkPlug
+
+    /// The percentage where a glyph would be, sized to the glyph and always
+    /// about two digits wide: one digit carries a small %, a full battery
+    /// reads per `batteryFullStyle`. A bolt beside it while charging, red arc
+    /// and number when low.
     static func ringBatteryImage(percent: Int, isCharging: Bool, isLow: Bool, style: MenuBarBlockStyle) -> NSImage {
         let layout = layout(style: style)
         let gauge = gaugeStyle
+        let full = batteryFullStyle
         let low = isLow || (percent <= 20 && !isCharging)
         let ringColor: NSColor = low ? .systemRed : (coloredGauges ? hues["BAT"]! : .labelColor)
 
         let image = NSImage(size: layout.size, flipped: false) { _ in
             drawRing(layout, level: CGFloat(percent) / 100, color: ringColor, style: gauge)
-            // The number grows with the glyph it stands in for.
-            let digits = layout.glyph.height * (percent >= 100 ? 0.58 : 0.68)
-            var font = NSFont.monospacedDigitSystemFont(ofSize: digits, weight: .heavy)
-            if let rounded = font.fontDescriptor.withDesign(.rounded) {
-                font = NSFont(descriptor: rounded, size: font.pointSize) ?? font
+            let ink: NSColor = low ? .systemRed : .labelColor
+            let box = layout.glyph
+            var drewSymbol = false
+            var contentMaxX = box.midX
+
+            func face(_ size: CGFloat, compressed: Bool = false) -> NSFont {
+                if compressed { return NSFont.systemFont(ofSize: size, weight: .heavy, width: .compressed) }
+                let font = NSFont.monospacedDigitSystemFont(ofSize: size, weight: .heavy)
+                return font.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: size) } ?? font
             }
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: font, .kern: -0.3, .foregroundColor: low ? NSColor.systemRed : NSColor.labelColor]
-            let text = "\(percent)" as NSString
-            let textSize = text.size(withAttributes: attributes)
-            let origin = NSPoint(x: layout.glyph.midX - textSize.width / 2, y: layout.glyph.midY - textSize.height / 2)
-            text.draw(at: origin, withAttributes: attributes)
-            if isCharging, let bolt = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
+            func drawCentered(_ text: NSAttributedString) {
+                let size = text.size()
+                text.draw(at: NSPoint(x: box.midX - size.width / 2, y: box.midY - size.height / 2))
+                contentMaxX = box.midX + size.width / 2
+            }
+            func drawSymbol(_ name: String, pointSize: CGFloat) {
+                guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: .heavy)) else { return }
+                let rect = NSRect(x: box.midX - symbol.size.width / 2, y: box.midY - symbol.size.height / 2,
+                                  width: symbol.size.width, height: symbol.size.height)
+                tinted(symbol, size: rect.size).draw(in: rect)
+                contentMaxX = rect.maxX
+                drewSymbol = true
+            }
+
+            let digitSize = box.height * 0.68
+            if percent >= 100 {
+                switch full {
+                case .condensed:
+                    drawCentered(NSAttributedString(string: "100", attributes: [
+                        .font: face(digitSize, compressed: true), .kern: -0.2, .foregroundColor: ink]))
+                case .check:
+                    drawSymbol("checkmark", pointSize: box.height * 0.6)
+                case .checkPlug:
+                    drawSymbol(isCharging ? "powerplug.fill" : "checkmark", pointSize: box.height * (isCharging ? 0.56 : 0.6))
+                }
+            } else {
+                let text = NSMutableAttributedString(string: "\(percent)", attributes: [
+                    .font: face(digitSize), .kern: -0.3, .foregroundColor: ink])
+                if percent < 10 {
+                    text.append(NSAttributedString(string: "%", attributes: [
+                        .font: face(digitSize * 0.62), .baselineOffset: 0.4 * layout.scale,
+                        .foregroundColor: ink.withAlphaComponent(0.7)]))
+                }
+                drawCentered(text)
+            }
+            // A plug already says "on power"; anything else gets the bolt.
+            if isCharging, !(drewSymbol && full == .checkPlug),
+               let bolt = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 6 * layout.scale, weight: .black)) {
-                let boltRect = NSRect(x: origin.x + textSize.width + 0.4, y: layout.glyph.midY + 2 * layout.scale,
+                let boltRect = NSRect(x: contentMaxX + 0.4, y: box.midY + 2 * layout.scale,
                                       width: bolt.size.width, height: bolt.size.height)
                 tinted(bolt, size: boltRect.size).draw(in: boltRect)
             }
