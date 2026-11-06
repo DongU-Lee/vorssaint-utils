@@ -23,18 +23,18 @@ extension MenuBarRenderer {
     private static let gaugeWidth: CGFloat = 2
     private static let gaugeGap: CGFloat = 1.5           // glyph edge to the arc's inner side
     private static let gaugeMinimumDegrees: CGFloat = 8  // a 0% reading still shows a dot
-    private static let gaugeThinWidth: CGFloat = 0.6
 
     /// How the arc shows its value.
     /// - track: a faint full-length track with the level drawn over it.
-    /// - taper / fade / taperFade: one stroke; past the level it thins, fades, or both.
-    /// - comet: one stroke that thins along its length and ends at the level.
-    enum GaugeStyle: String { case track, taper, fade, taperFade, comet }
+    /// - swoosh: one stroke from the bottom, faint there and strengthening to
+    ///   solid at the level, where it ends; the width never changes.
+    /// - swooshTrack: the swoosh with a faint track above the level.
+    enum GaugeStyle: String { case track, swoosh, swooshTrack }
 
-    /// `defaults write <bundle id> menuBarGaugeStyle taperFade` switches it at
+    /// `defaults write <bundle id> menuBarGaugeStyle swoosh` switches it at
     /// the next launch.
     static var gaugeStyle: GaugeStyle = GaugeStyle(
-        rawValue: UserDefaults.standard.string(forKey: "menuBarGaugeStyle") ?? "") ?? .track
+        rawValue: UserDefaults.standard.string(forKey: "menuBarGaugeStyle") ?? "") ?? .swoosh
 
     /// Usage gauges move in 2% steps, so a jittery reading reuses images.
     static func cachedRingImage(label: String, fraction: Double?, style: MenuBarBlockStyle) -> NSImage {
@@ -112,47 +112,39 @@ extension MenuBarRenderer {
             return
         }
 
-        // One stroke drawn as short butt-capped pieces, each at its own width
-        // and opacity, with a round dot closing each end.
+        // One stroke drawn as short butt-capped pieces at a constant width,
+        // each at its own opacity: faint at the bottom, solid at the level.
+        // A missing reading is all faint.
         let pieces = 48
-        func shape(at t: CGFloat) -> (width: CGFloat, alpha: CGFloat, color: NSColor)? {
-            guard let level else { return (gaugeThinWidth, trackAlpha, .labelColor) }
-            switch gaugeStyle {
-            case .comet:
-                guard t <= level else { return nil }
-                return (gaugeWidth - (gaugeWidth - gaugeThinWidth) * t / level, 1, levelColor)
-            case .taper, .fade, .taperFade:
-                guard t > level else { return (gaugeWidth, 1, levelColor) }
-                let u = (t - level) / max(1 - level, 0.001)
-                let width = gaugeStyle == .fade ? gaugeWidth : gaugeWidth - (gaugeWidth - gaugeThinWidth) * u
-                let alpha = gaugeStyle == .taper ? 1 : 1 - (1 - trackAlpha) * u
-                return (width, alpha, .labelColor)
-            case .track:
-                return nil
-            }
+        func shade(at t: CGFloat) -> (alpha: CGFloat, color: NSColor)? {
+            guard let level else { return (trackAlpha, .labelColor) }
+            if t <= level { return (trackAlpha + (1 - trackAlpha) * t / level, levelColor) }
+            return gaugeStyle == .swooshTrack ? (trackAlpha * 0.8, .labelColor) : nil
         }
-        var tip: (t: CGFloat, width: CGFloat, alpha: CGFloat, color: NSColor)?
+        var end: CGFloat = 0
         for i in 0..<pieces {
             let t0 = CGFloat(i) / CGFloat(pieces), t1 = CGFloat(i + 1) / CGFloat(pieces)
-            guard let s = shape(at: (t0 + t1) / 2) else { break }
+            guard let s = shade(at: (t0 + t1) / 2) else { break }
             let piece = NSBezierPath()
             // A hair of overlap hides seams between pieces.
             piece.appendArc(withCenter: center, radius: gaugeRadius, startAngle: angle(t0) - 0.15, endAngle: angle(t1) + 0.15)
-            piece.lineWidth = s.width
+            piece.lineWidth = gaugeWidth
             piece.lineCapStyle = .butt
             s.color.withAlphaComponent(s.alpha).setStroke()
             piece.stroke()
-            tip = (t1, s.width, s.alpha, s.color)
+            end = t1
         }
-        func dot(at t: CGFloat, width: CGFloat, alpha: CGFloat, color: NSColor) {
+        // Round caps: both ends of what was drawn, and the head at the level.
+        func cap(at t: CGFloat, _ shade: (alpha: CGFloat, color: NSColor)) {
             let radians = angle(t) * .pi / 180
             let point = NSPoint(x: center.x + gaugeRadius * cos(radians), y: center.y + gaugeRadius * sin(radians))
-            color.withAlphaComponent(alpha).setFill()
-            NSBezierPath(ovalIn: NSRect(x: point.x - width / 2, y: point.y - width / 2, width: width, height: width)).fill()
+            shade.color.withAlphaComponent(shade.alpha).setFill()
+            NSBezierPath(ovalIn: NSRect(x: point.x - gaugeWidth / 2, y: point.y - gaugeWidth / 2,
+                                        width: gaugeWidth, height: gaugeWidth)).fill()
         }
-        if let start = shape(at: 0) { dot(at: 0, width: start.width, alpha: start.alpha, color: start.color) }
-        // A translucent tip ends cleanly on its own; an opaque one needs the cap.
-        if let tip, tip.alpha >= 0.999 { dot(at: tip.t, width: tip.width, alpha: tip.alpha, color: tip.color) }
+        if let start = shade(at: 0) { cap(at: 0, start) }
+        if let level { cap(at: level, (1, levelColor)) }
+        if end > (level ?? 0), let tail = shade(at: end) { cap(at: end, tail) }
     }
 
     /// A battery outline with the percentage inside, the terminal at half

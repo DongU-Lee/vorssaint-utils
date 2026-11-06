@@ -13,7 +13,7 @@ import AppKit
 /// - `custom`: Vorssaint's own set as filled silhouettes with the detail cut
 ///   out of them, the weight of macOS's own menu bar icons (Wi-Fi, battery,
 ///   Control Center are all solid): a chip with a ring around its die and
-///   two pins a side, a card with its fan cut out, a stick with three chips
+///   two pins a side, a card with its fan cut out and its connector foot, a stick with three chips
 ///   cut out, a drive with its slot and light, and three tiles plus a dot
 ///   for the one tucked away.
 ///
@@ -25,7 +25,7 @@ enum MenuBarMetricGlyphs {
     /// Which family draws. `defaults write <bundle id> menuBarGlyphSet custom`
     /// switches it at the next launch.
     static var set: GlyphSet = GlyphSet(
-        rawValue: UserDefaults.standard.string(forKey: "menuBarGlyphSet") ?? "") ?? .mingcute
+        rawValue: UserDefaults.standard.string(forKey: "menuBarGlyphSet") ?? "") ?? .custom
 
     private static let cache = NSCache<NSString, NSImage>()
 
@@ -134,7 +134,7 @@ enum MenuBarMetricGlyphs {
     """
 
     private static let customCard = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M7,6h12a3,3 0 0 1 3,3v5a3,3 0 0 1 -3,3h-12a3,3 0 0 1 -3,-3v-5a3,3 0 0 1 3,-3zM11.6,11.5a3.4,3.4 0 1 0 6.8,0a3.4,3.4 0 1 0 -6.8,0z"/><path d="M13.8,11.5a1.2,1.2 0 1 0 2.4,0a1.2,1.2 0 1 0 -2.4,0zM2.45,3.5h0.0a0.85,0.85 0 0 1 0.85,0.85v15.3a0.85,0.85 0 0 1 -0.85,0.85h-0.0a0.85,0.85 0 0 1 -0.85,-0.85v-15.3a0.85,0.85 0 0 1 0.85,-0.85zM7.9,16h3.2a0.9,0.9 0 0 1 0.9,0.9v2.2a0.9,0.9 0 0 1 -0.9,0.9h-3.2a0.9,0.9 0 0 1 -0.9,-0.9v-2.2a0.9,0.9 0 0 1 0.9,-0.9z"/></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M5,6h14a3,3 0 0 1 3,3v5a3,3 0 0 1 -3,3h-14a3,3 0 0 1 -3,-3v-5a3,3 0 0 1 3,-3zM11.1,11.5a3.4,3.4 0 1 0 6.8,0a3.4,3.4 0 1 0 -6.8,0z"/><path d="M13.3,11.5a1.2,1.2 0 1 0 2.4,0a1.2,1.2 0 1 0 -2.4,0zM6.4,16h3.2a0.9,0.9 0 0 1 0.9,0.9v2.2a0.9,0.9 0 0 1 -0.9,0.9h-3.2a0.9,0.9 0 0 1 -0.9,-0.9v-2.2a0.9,0.9 0 0 1 0.9,-0.9z"/></svg>
     """
 
     private static let customStick = """
