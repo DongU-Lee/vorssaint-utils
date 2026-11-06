@@ -10,6 +10,8 @@ import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate {
     private var statusController: StatusItemController!
+    /// Folds other apps' menu bar icons into one item (macOS 27 and later).
+    private var menuBarHider: MenuBarHiderController?
     private let popover = NSPopover()
     private var popoverDismissMonitor: Any?
     private var popoverLocalDismissMonitor: Any?
@@ -119,6 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         PanelLayout.resetCollapsedSectionsOnce(for: "2.15.1")
 
         statusController = StatusItemController()
+        if #available(macOS 27, *) { menuBarHider = MenuBarHiderController() }
         statusController.onLeftClick = { [weak self] in
             self?.captureStatusClick()
             self?.toggleMainPopover()
@@ -314,6 +317,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
     func applicationWillTerminate(_ notification: Notification) {
         isTerminating = true
+        menuBarHider?.tearDown()
         CommandBarService.shared.restoreBorrowedInputSource()
         if AppFeature.notch.isAvailable { NotchService.shared.stop(restoreCapture: false) }
         // Quitting properly means the start worked, whenever it happened.
