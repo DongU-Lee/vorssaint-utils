@@ -30,6 +30,11 @@ final class MenuBarHiderController: NSObject {
     /// A right click, which opens the app's context menu like every other
     /// Vorssaint item; receives the button so the menu can anchor to it.
     var onRightClick: ((NSStatusBarButton?) -> Void)?
+    /// The app the current restriction lets through beside our own, if any.
+    private var revealedBundleID: String?
+    /// Watches for clicks on the system clock while icons are hidden.
+    private var clockMonitor: Any?
+    private var clockClickFrame: CGRect?
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -40,11 +45,16 @@ final class MenuBarHiderController: NSObject {
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         updateIcon()
         collapse()
+        clockMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+            self?.handleClockEvent(event)
+        }
     }
 
     /// Drops the restriction so the whole bar shows again.
     func tearDown() {
         stopRehideMonitor()
+        if let clockMonitor { NSEvent.removeMonitor(clockMonitor) }
+        clockMonitor = nil
         assertion?.invalidate()
         assertion = nil
         NSStatusBar.system.removeStatusItem(statusItem)
@@ -60,6 +70,7 @@ final class MenuBarHiderController: NSObject {
         guard NativeMenuBarVisibility.isAvailable else { return updateIcon() }
         generation += 1
         let generation = self.generation
+        revealedBundleID = bundleID
         let allowed = [ownBundleID] + (bundleID.map { [$0] } ?? [])
         NativeMenuBarVisibility.activate(allowing: allowed) { [weak self] newAssertion in
             guard let self, generation == self.generation else {
@@ -105,6 +116,47 @@ final class MenuBarHiderController: NSObject {
         // Dimmed while everything is showing, so the state reads at a glance.
         statusItem.button?.appearsDisabled = NativeMenuBarVisibility.isAvailable && !isCollapsed
         statusItem.button?.toolTip = tip
+    }
+
+    // MARK: - The system clock
+
+    /// macOS ignores clicks on its clock while any menu bar restriction is
+    /// held (the restriction is exam mode), so a click lands on nothing. A
+    /// plain left click on the clock while hidden lifts the restriction,
+    /// presses the clock, and puts the identical restriction back;
+    /// Notification Center stays open across that. A click while it is open
+    /// closes it by itself and is left alone.
+    private func handleClockEvent(_ event: NSEvent) {
+        guard let location = event.cgEvent?.location else { return }
+        switch event.type {
+        case .leftMouseDown:
+            clockClickFrame = nil
+            guard isCollapsed, event.modifierFlags.isDisjoint(with: [.command, .control]),
+                  let clock = SystemClock.items().first(where: { $0.frame.contains(location) }),
+                  !SystemClock.isNotificationCenterOpen else { return }
+            clockClickFrame = clock.frame
+        case .leftMouseUp:
+            guard let frame = clockClickFrame else { return }
+            clockClickFrame = nil
+            if frame.contains(location) { openNotificationCenter(at: location) }
+        default:
+            break
+        }
+    }
+
+    private func openNotificationCenter(at location: CGPoint) {
+        guard isCollapsed else { return }
+        generation += 1
+        assertion?.invalidate()
+        assertion = nil
+        let revealed = revealedBundleID
+        // Pressed off the main thread once macOS has applied the lift, as
+        // the accessibility call can block for a moment.
+        DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.03) {
+            let clocks = SystemClock.items()
+            (clocks.first { $0.frame.contains(location) } ?? clocks.first)?.press()
+            DispatchQueue.main.async { [weak self] in self?.collapse(revealing: revealed) }
+        }
     }
 
     // MARK: - Tray
@@ -232,7 +284,7 @@ final class MenuBarExtra: NSObject {
         }
     }
 
-    private static func frame(of element: AXUIElement) -> CGRect? {
+    static func frame(of element: AXUIElement) -> CGRect? {
         var positionValue: AnyObject?
         var sizeValue: AnyObject?
         guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue) == .success,
@@ -482,6 +534,65 @@ private struct ClickCatcher: NSViewRepresentable {
     func updateNSView(_ view: CatcherView, context: Context) {
         view.onLeft = onLeft
         view.onRight = onRight
+    }
+}
+
+// MARK: - The system clock, read through Accessibility
+
+enum SystemClock {
+    struct Item {
+        let element: AXUIElement
+        let frame: CGRect
+        func press() { AXUIElementPerformAction(element, kAXPressAction as CFString) }
+    }
+
+    private static let ownerBundleID = "com.apple.MenuBarAgent"
+    private static let clockIdentifier = "com.apple.menuextra.clock"
+    private static let notificationCenterBundleID = "com.apple.notificationcenterui"
+
+    /// The clock items in the bar (one per display), with their frames in
+    /// screen coordinates (top-left origin).
+    static func items() -> [Item] {
+        guard let agent = NSRunningApplication.runningApplications(withBundleIdentifier: ownerBundleID).first
+        else { return [] }
+        let app = AXUIElementCreateApplication(agent.processIdentifier)
+        AXUIElementSetMessagingTimeout(app, 0.5)
+        guard let bar = value(of: app, "AXExtrasMenuBar"), CFGetTypeID(bar) == AXUIElementGetTypeID() else { return [] }
+        var items: [Item] = []
+        // swiftlint:disable:next force_cast
+        for group in children(of: bar as! AXUIElement) {
+            for item in [group] + children(of: group) where value(of: item, kAXIdentifierAttribute) as? String == clockIdentifier {
+                if let frame = MenuBarExtra.frame(of: item) { items.append(Item(element: item, frame: frame)) }
+            }
+        }
+        return items
+    }
+
+    /// True while Notification Center's panel is on screen: a window of its
+    /// process at least half a screen tall.
+    static var isNotificationCenterOpen: Bool {
+        let owners = Set(NSRunningApplication.runningApplications(withBundleIdentifier: notificationCenterBundleID)
+            .map(\.processIdentifier))
+        guard !owners.isEmpty,
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return false }
+        let minimumHeight = (NSScreen.screens.map(\.frame.height).min() ?? 0) / 2
+        return windows.contains { window in
+            guard let pid = window[kCGWindowOwnerPID as String] as? pid_t, owners.contains(pid),
+                  let layer = window[kCGWindowLayer as String] as? Int, layer >= 0,
+                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                  let frame = CGRect(dictionaryRepresentation: bounds) else { return false }
+            return frame.height >= minimumHeight
+        }
+    }
+
+    private static func value(of element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success ? value : nil
+    }
+
+    private static func children(of element: AXUIElement) -> [AXUIElement] {
+        value(of: element, kAXChildrenAttribute) as? [AXUIElement] ?? []
     }
 }
 
