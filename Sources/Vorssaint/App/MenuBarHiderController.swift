@@ -3,7 +3,12 @@
 
 import AppKit
 import ApplicationServices
+import OSLog
 import SwiftUI
+
+/// What the hider does, in the unified log (public, so it can be read back):
+/// `log show --predicate 'subsystem == "com.vorssaint.menubarhider"'`.
+private let hiderLog = Logger(subsystem: "com.vorssaint.menubarhider", category: "tray")
 
 /// Folds every other app's menu bar icon behind one item of ours and shows the
 /// hidden ones as a grid of app icons in a tray under it.
@@ -183,8 +188,14 @@ final class MenuBarHiderController: NSObject {
             state: trayState(),
             // The tray stays open while the picked app shows its menu or
             // panel; it closes on a click outside both, or on Escape.
-            onOpen: { [weak self] extra in self?.tray.spare(extra.pid); self?.open(extra) },
-            onRightClick: { [weak self] extra in self?.tray.spare(extra.pid); self?.open(extra, rightClick: true) },
+            onOpen: { [weak self] extra in
+                hiderLog.notice("tray tile left: \(extra.label, privacy: .public)")
+                self?.tray.spare(extra.pid); self?.open(extra)
+            },
+            onRightClick: { [weak self] extra in
+                hiderLog.notice("tray tile right: \(extra.label, privacy: .public)")
+                self?.tray.spare(extra.pid); self?.open(extra, rightClick: true)
+            },
             onShowAll: { [weak self] in close(); self?.expand() },
             onHideOthers: { [weak self] in close(); self?.collapse() },
             onRequestAccess: { close(); Permissions.shared.requestAccessibility() }),
@@ -228,7 +239,8 @@ final class MenuBarHiderController: NSObject {
             if !placed, attempt < 10 {
                 return self.activateOncePlaced(extra, rightClick: rightClick, attempt: attempt + 1)
             }
-            NSLog("MenuBarHider: \(rightClick ? "right" : "left") click on \(extra.label) at \(fresh.frame.map { "\($0)" } ?? "no frame"), placed \(placed)")
+            let frameText = fresh.frame.map { "\($0)" } ?? "no frame"
+            hiderLog.notice("\(rightClick ? "right" : "left", privacy: .public) click on \(extra.label, privacy: .public) at \(frameText, privacy: .public), placed \(placed, privacy: .public)")
             fresh.click(right: rightClick, placed: placed)
             // Installed after the click we just posted has passed, so the
             // monitor does not mistake our own click for the next one.
@@ -339,7 +351,8 @@ final class MenuBarExtra: NSObject {
                 event.post(tap: .cghidEventTap)
             }
         }
-        NSLog("MenuBarHider: \(right ? "right" : "left") click on \(label) sent \(window.map { "to window \($0)" } ?? "as hardware")")
+        let route = window.map { "to window \($0)" } ?? "as hardware"
+        hiderLog.notice("\(right ? "right" : "left", privacy: .public) click on \(self.label, privacy: .public) sent \(route, privacy: .public)")
         if window == nil, let pointer {
             // Back where the person left it once the click has landed.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { CGWarpMouseCursorPosition(pointer) }
@@ -784,7 +797,7 @@ enum NativeMenuBarVisibility {
         let raw = assertionType.init()
         let activate = unsafeBitCast(msgSend, to: ActivateFn.self)
         activate(raw, activateSelector, configuration) { error in
-            if let error { NSLog("MenuBarHider: activation failed: \(error)") }
+            if let error { hiderLog.error("activation failed: \(String(describing: error), privacy: .public)") }
             finish(error == nil ? Assertion(raw: raw) : nil)
         }
     }
