@@ -181,8 +181,10 @@ final class MenuBarHiderController: NSObject {
         let close: () -> Void = { [weak self] in self?.tray.close() }
         tray.show(HiddenAppsTray(
             state: trayState(),
-            onOpen: { [weak self] extra in close(); self?.open(extra) },
-            onRightClick: { [weak self] extra in close(); self?.open(extra, rightClick: true) },
+            // The tray stays open while the picked app shows its menu or
+            // panel; it closes on a click outside both, or on Escape.
+            onOpen: { [weak self] extra in self?.tray.spare(extra.pid); self?.open(extra) },
+            onRightClick: { [weak self] extra in self?.tray.spare(extra.pid); self?.open(extra, rightClick: true) },
             onShowAll: { [weak self] in close(); self?.expand() },
             onHideOthers: { [weak self] in close(); self?.collapse() },
             onRequestAccess: { close(); Permissions.shared.requestAccessibility() }),
@@ -240,7 +242,7 @@ final class MenuBarHiderController: NSObject {
     private func startRehideMonitor(sparing pid: pid_t? = nil) {
         stopRehideMonitor()
         rehideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            guard let self else { return }
+            guard let self, !MenuBarExtra.isPosted(event) else { return }
             if let pid, let location = event.cgEvent?.location, Self.windowOwner(at: location) == pid { return }
             self.stopRehideMonitor()
             // Late enough that a click choosing a menu entry still lands.
@@ -253,7 +255,7 @@ final class MenuBarHiderController: NSObject {
 
     /// The process owning the frontmost on-screen window under a point (top
     /// left origin), menus and panels included.
-    private static func windowOwner(at point: CGPoint) -> pid_t? {
+    fileprivate static func windowOwner(at point: CGPoint) -> pid_t? {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return nil }
         for window in windows {   // front to back
@@ -318,9 +320,19 @@ final class MenuBarExtra: NSObject {
         let point = CGPoint(x: frame.midX, y: frame.midY)
         let types: [CGEventType] = right ? [.rightMouseDown, .rightMouseUp] : [.leftMouseDown, .leftMouseUp]
         for type in types {
-            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point,
-                    mouseButton: right ? .right : .left)?.post(tap: .cghidEventTap)
+            let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point,
+                                mouseButton: right ? .right : .left)
+            event?.setIntegerValueField(.eventSourceUserData, value: Self.postedMarker)
+            event?.post(tap: .cghidEventTap)
         }
+    }
+
+    /// Tags the clicks posted above, so our own monitors can tell them from
+    /// the person's.
+    private static let postedMarker: Int64 = 0x564F_5253   // "VORS"
+
+    static func isPosted(_ event: NSEvent) -> Bool {
+        event.cgEvent?.getIntegerValueField(.eventSourceUserData) == postedMarker
     }
 
     static func frame(of element: AXUIElement) -> CGRect? {
@@ -399,7 +411,8 @@ private final class TrayPanel: NSPanel {
         // Reused for every opening, so closing must not free it.
         isReleasedWhenClosed = false
         isFloatingPanel = true
-        level = .popUpMenu
+        // Below menus, so an app's menu opened from the tray draws over it.
+        level = .statusBar
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
@@ -423,8 +436,13 @@ private final class TrayPanel: NSPanel {
         let y = min(buttonFrame.minY, visible.maxY) - 5 - size.height
         setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
         makeKeyAndOrderFront(nil)
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.close()
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self, !MenuBarExtra.isPosted(event) else { return }
+            // Clicks in the app opened from the tray (its menu, panel or
+            // icon) are part of using it.
+            if let pid = self.sparedPID, let location = event.cgEvent?.location,
+               MenuBarHiderController.windowOwner(at: location) == pid { return }
+            self.close()
         }
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard event.keyCode == 53 else { return event }   // Escape
@@ -433,7 +451,13 @@ private final class TrayPanel: NSPanel {
         }
     }
 
+    /// The app opened from the tray, whose windows do not close it.
+    private(set) var sparedPID: pid_t?
+
+    func spare(_ pid: pid_t) { sparedPID = pid }
+
     override func close() {
+        sparedPID = nil
         if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
         if let localKeyMonitor { NSEvent.removeMonitor(localKeyMonitor) }
         outsideClickMonitor = nil
@@ -443,6 +467,8 @@ private final class TrayPanel: NSPanel {
 
     override func resignKey() {
         super.resignKey()
+        // The opened app taking focus is expected; anything else closes.
+        guard sparedPID == nil else { return }
         close()
     }
 }
