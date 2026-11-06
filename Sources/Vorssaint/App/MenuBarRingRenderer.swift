@@ -141,9 +141,10 @@ extension MenuBarRenderer {
     private static func drawGauge(center: NSPoint, radius: CGFloat, fraction: Double?, color: NSColor) {
         let track = NSBezierPath()
         track.appendArc(withCenter: center, radius: radius, startAngle: -gaugeSweep, endAngle: gaugeSweep)
-        track.lineWidth = gaugeLineWidth
+        // Hairline track, heavy level: the same two weights as the glyphs.
+        track.lineWidth = MenuBarMetricGlyphs.hairline
         track.lineCapStyle = .round
-        NSColor.labelColor.withAlphaComponent(0.18).setStroke()
+        NSColor.labelColor.withAlphaComponent(0.28).setStroke()
         track.stroke()
 
         guard let fraction, fraction > 0 else { return }
