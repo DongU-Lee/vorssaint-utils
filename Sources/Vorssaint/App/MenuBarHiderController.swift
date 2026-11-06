@@ -313,18 +313,53 @@ final class MenuBarExtra: NSObject {
     }
 
     /// A real click at the icon's centre, which the app answers exactly as
-    /// it would in the bar. Without a placed frame a right click is still
-    /// tried there, and a left click falls back to the accessibility press.
+    /// it would in the bar. It goes straight to the app's process, addressed
+    /// to the icon's window, so the pointer never moves; if that window
+    /// cannot be found (or `menuBarTrayClickMode` is `hid`) it is posted as a
+    /// hardware click and the pointer is put back where it was. Without a
+    /// placed frame a right click is still tried there, and a left click
+    /// falls back to the accessibility press.
     func click(right: Bool, placed: Bool) {
         guard let frame, placed || right else { return press() }
         let point = CGPoint(x: frame.midX, y: frame.midY)
         let types: [CGEventType] = right ? [.rightMouseDown, .rightMouseUp] : [.leftMouseDown, .leftMouseUp]
+        let direct = UserDefaults.standard.string(forKey: "menuBarTrayClickMode") != "hid"
+        let window = direct ? Self.statusWindow(of: pid, containing: point) : nil
+        let pointer = CGEvent(source: nil)?.location
         for type in types {
-            let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point,
-                                mouseButton: right ? .right : .left)
-            event?.setIntegerValueField(.eventSourceUserData, value: Self.postedMarker)
-            event?.post(tap: .cghidEventTap)
+            guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point,
+                                      mouseButton: right ? .right : .left) else { continue }
+            event.setIntegerValueField(.eventSourceUserData, value: Self.postedMarker)
+            event.setIntegerValueField(.mouseEventClickState, value: 1)
+            if let window {
+                event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window))
+                event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window))
+                event.postToPid(pid)
+            } else {
+                event.post(tap: .cghidEventTap)
+            }
         }
+        NSLog("MenuBarHider: \(right ? "right" : "left") click on \(label) sent \(window.map { "to window \($0)" } ?? "as hardware")")
+        if window == nil, let pointer {
+            // Back where the person left it once the click has landed.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { CGWarpMouseCursorPosition(pointer) }
+        }
+    }
+
+    /// The app's menu bar window (status window level) holding a point.
+    private static func statusWindow(of pid: pid_t, containing point: CGPoint) -> CGWindowID? {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]
+        else { return nil }
+        let statusLevel = Int(CGWindowLevelForKey(.statusWindow))
+        for window in windows {
+            guard window[kCGWindowOwnerPID as String] as? pid_t == pid,
+                  window[kCGWindowLayer as String] as? Int == statusLevel,
+                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                  let frame = CGRect(dictionaryRepresentation: bounds), frame.contains(point),
+                  let number = window[kCGWindowNumber as String] as? CGWindowID else { continue }
+            return number
+        }
+        return nil
     }
 
     /// Tags the clicks posted above, so our own monitors can tell them from
