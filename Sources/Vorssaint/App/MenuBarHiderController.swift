@@ -203,14 +203,28 @@ final class MenuBarHiderController: NSObject {
             return
         }
         collapse(revealing: bundleID) { [weak self] in
-            // The bar needs a moment to place the revealed icon before it can
-            // anchor the app's menu.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                MenuBarExtra.refreshed(extra)?.activate(rightClick: rightClick)
-                // Installed after the click we just posted has passed, so the
-                // monitor does not mistake our own right click for the next one.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self?.startRehideMonitor() }
+            self?.activateOncePlaced(extra, rightClick: rightClick, attempt: 0)
+        }
+    }
+
+    /// Clicks the revealed icon once macOS has placed it. A left press goes
+    /// through Accessibility and needs no position, so it follows one short
+    /// wait; a right click is posted at the icon's frame, and a hidden item
+    /// reports a stale frame until it is back in the bar, so that waits
+    /// (up to about 1.5 s) for a frame inside the menu bar strip.
+    private func activateOncePlaced(_ extra: MenuBarExtra, rightClick: Bool, attempt: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0.35 : 0.12)) { [weak self] in
+            guard let self else { return }
+            let fresh = MenuBarExtra.refreshed(extra) ?? extra
+            let placed = fresh.frame.map(SystemClock.isInMenuBar) ?? false
+            if rightClick, !placed, attempt < 10 {
+                return self.activateOncePlaced(extra, rightClick: true, attempt: attempt + 1)
             }
+            if rightClick { NSLog("MenuBarHider: right click on \(extra.label) at \(fresh.frame.map { "\($0)" } ?? "no frame"), placed \(placed)") }
+            fresh.activate(rightClick: rightClick)
+            // Installed after the click we just posted has passed, so the
+            // monitor does not mistake our own right click for the next one.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.startRehideMonitor() }
         }
     }
 
@@ -583,6 +597,17 @@ enum SystemClock {
                   let bounds = window[kCGWindowBounds as String] as? NSDictionary,
                   let frame = CGRect(dictionaryRepresentation: bounds) else { return false }
             return frame.height >= minimumHeight
+        }
+    }
+
+    /// Whether a frame (top-left origin) sits in some display's menu bar.
+    static func isInMenuBar(_ frame: CGRect) -> Bool {
+        guard frame.width > 0, let primaryTop = NSScreen.screens.first?.frame.maxY else { return false }
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+        return NSScreen.screens.contains { screen in
+            let top = primaryTop - screen.frame.maxY
+            let height = max(screen.frame.maxY - screen.visibleFrame.maxY, screen.safeAreaInsets.top, NSStatusBar.system.thickness)
+            return point.x >= screen.frame.minX && point.x <= screen.frame.maxX && point.y >= top && point.y <= top + height
         }
     }
 
