@@ -204,7 +204,7 @@ final class MenuBarHiderController: NSObject {
         guard let bundleID = extra.bundleID else {
             // macOS cannot allow-list an app without a bundle id, so it stays
             // hidden; pressing it is all that is left to try.
-            extra.activate(rightClick: rightClick)
+            extra.click(right: rightClick, placed: false)
             return
         }
         collapse(revealing: bundleID) { [weak self] in
@@ -212,31 +212,36 @@ final class MenuBarHiderController: NSObject {
         }
     }
 
-    /// Clicks the revealed icon once macOS has placed it. A left press goes
-    /// through Accessibility and needs no position, so it follows one short
-    /// wait; a right click is posted at the icon's frame, and a hidden item
-    /// reports a stale frame until it is back in the bar, so that waits
-    /// (up to about 1.5 s) for a frame inside the menu bar strip.
+    /// Clicks the revealed icon once macOS has placed it, with a real mouse
+    /// click at its frame, which is what the app answers in the bar (some,
+    /// OneDrive among them, ignore the accessibility press). A hidden item
+    /// reports a stale frame until it is back in the bar, so this waits (up
+    /// to about 1.5 s) for a frame inside the menu bar strip; with none, a
+    /// left click falls back to the press.
     private func activateOncePlaced(_ extra: MenuBarExtra, rightClick: Bool, attempt: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0.35 : 0.12)) { [weak self] in
             guard let self else { return }
             let fresh = MenuBarExtra.refreshed(extra) ?? extra
             let placed = fresh.frame.map(SystemClock.isInMenuBar) ?? false
-            if rightClick, !placed, attempt < 10 {
-                return self.activateOncePlaced(extra, rightClick: true, attempt: attempt + 1)
+            if !placed, attempt < 10 {
+                return self.activateOncePlaced(extra, rightClick: rightClick, attempt: attempt + 1)
             }
-            if rightClick { NSLog("MenuBarHider: right click on \(extra.label) at \(fresh.frame.map { "\($0)" } ?? "no frame"), placed \(placed)") }
-            fresh.activate(rightClick: rightClick)
+            NSLog("MenuBarHider: \(rightClick ? "right" : "left") click on \(extra.label) at \(fresh.frame.map { "\($0)" } ?? "no frame"), placed \(placed)")
+            fresh.click(right: rightClick, placed: placed)
             // Installed after the click we just posted has passed, so the
-            // monitor does not mistake our own right click for the next one.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.startRehideMonitor() }
+            // monitor does not mistake our own click for the next one.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.startRehideMonitor(sparing: extra.pid) }
         }
     }
 
-    private func startRehideMonitor() {
+    /// Hides again after the next click outside the revealed app. Clicks in
+    /// that app's own windows (its menu, its panel, its icon) are part of
+    /// using it and are let through.
+    private func startRehideMonitor(sparing pid: pid_t? = nil) {
         stopRehideMonitor()
-        rehideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        rehideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self else { return }
+            if let pid, let location = event.cgEvent?.location, Self.windowOwner(at: location) == pid { return }
             self.stopRehideMonitor()
             // Late enough that a click choosing a menu entry still lands.
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -244,6 +249,20 @@ final class MenuBarHiderController: NSObject {
                 self.collapse()
             }
         }
+    }
+
+    /// The process owning the frontmost on-screen window under a point (top
+    /// left origin), menus and panels included.
+    private static func windowOwner(at point: CGPoint) -> pid_t? {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return nil }
+        for window in windows {   // front to back
+            guard let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                  let frame = CGRect(dictionaryRepresentation: bounds), frame.contains(point),
+                  (window[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { continue }
+            return window[kCGWindowOwnerPID as String] as? pid_t
+        }
+        return nil
     }
 
     private func stopRehideMonitor() {
@@ -291,15 +310,16 @@ final class MenuBarExtra: NSObject {
         AXUIElementPerformAction(element, kAXPressAction as CFString)
     }
 
-    /// A left click is the accessibility press. A right click has no such
-    /// action, so it is posted as real mouse events at the icon's centre,
-    /// which the app answers exactly as it would in the bar.
-    func activate(rightClick: Bool) {
-        guard rightClick, let frame else { return press() }
+    /// A real click at the icon's centre, which the app answers exactly as
+    /// it would in the bar. Without a placed frame a right click is still
+    /// tried there, and a left click falls back to the accessibility press.
+    func click(right: Bool, placed: Bool) {
+        guard let frame, placed || right else { return press() }
         let point = CGPoint(x: frame.midX, y: frame.midY)
-        for type in [CGEventType.rightMouseDown, .rightMouseUp] {
-            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .right)?
-                .post(tap: .cghidEventTap)
+        let types: [CGEventType] = right ? [.rightMouseDown, .rightMouseUp] : [.leftMouseDown, .leftMouseUp]
+        for type in types {
+            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point,
+                    mouseButton: right ? .right : .left)?.post(tap: .cghidEventTap)
         }
     }
 
