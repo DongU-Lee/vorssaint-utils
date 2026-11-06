@@ -809,6 +809,17 @@ enum MenuBarRenderer {
         return NSAttributedString(attachment: attachment)
     }
 
+    /// The date and time as the last segment of the readings item, aligned
+    /// like the gauge images beside it.
+    static func clockAttachment(at now: Date = Date()) -> NSAttributedString {
+        let image = MenuBarClock.image(at: now)
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(x: 0, y: -6.6 + legacyBlockAttachmentNudge,
+                                   width: image.size.width, height: image.size.height)
+        return NSAttributedString(attachment: attachment)
+    }
+
     private static func usageBarBlockAttachment(label: String,
                                                 fraction: Double?,
                                                 style: MenuBarBlockStyle,

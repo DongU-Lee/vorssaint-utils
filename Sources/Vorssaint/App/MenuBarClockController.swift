@@ -3,86 +3,55 @@
 
 import AppKit
 
-/// The date and time as a Vorssaint menu bar item, so it can sit among the
-/// readings and be arranged with them: two lines, the time large below and
-/// a compact date above, formatted for the current locale and the system's
-/// 12/24-hour choice from the `menuBarClockDateFormat` ("MdEEE": "11/6
-/// (목)") and `menuBarClockTimeFormat` ("Hmm": "15:42", always 24-hour;
-/// "jmm" follows the system's hour cycle) templates. An empty
-/// date template leaves the time alone on one line. `menuBarClock -bool NO`
-/// turns the item off at the next launch.
-final class MenuBarClockController {
-    private let statusItem: NSStatusItem
-    private let dateFormatter = DateFormatter()
-    private let timeFormatter = DateFormatter()
-    private var timer: Timer?
-    private var observers: [NSObjectProtocol] = []
-    /// A right click opens the app's context menu like every other item.
-    var onRightClick: ((NSStatusBarButton?) -> Void)?
+/// The date and time, drawn as the last segment of the readings item so it
+/// sits and clicks with them: two lines, the time large below and a compact
+/// date above, formatted for the current locale from the
+/// `menuBarClockDateFormat` ("MdEEE": "11/6 (목)") and
+/// `menuBarClockTimeFormat` ("Hmm": "15:42", always 24-hour; "jmm" follows
+/// the system's hour cycle) templates. An empty date template leaves the time
+/// alone on one line. `menuBarClock -bool NO` turns it off at the next launch.
+/// The readings item refreshes with every monitor tick, which carries the
+/// minute over within a couple of seconds.
+enum MenuBarClock {
+    static let isEnabled: Bool = UserDefaults.standard.object(forKey: "menuBarClock") as? Bool ?? true
 
-    init() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.autosaveName = "VorssaintMenuBarClock"
-        for formatter in [dateFormatter, timeFormatter] { formatter.locale = .autoupdatingCurrent }
-        dateFormatter.setLocalizedDateFormatFromTemplate(
-            UserDefaults.standard.string(forKey: "menuBarClockDateFormat") ?? "MdEEE")
-        timeFormatter.setLocalizedDateFormatFromTemplate(
-            UserDefaults.standard.string(forKey: "menuBarClockTimeFormat") ?? "Hmm")
-        if let button = statusItem.button {
-            button.target = self
-            button.action = #selector(clicked)
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        }
-        // The clock, time zone or locale changing, and waking from sleep, all
-        // leave the shown time stale until the next minute.
-        let center = NotificationCenter.default
-        for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange, NSLocale.currentLocaleDidChangeNotification] {
-            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.tick() })
-        }
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.tick() })
-        tick()
+    private static let dateFormatter: DateFormatter = formatter(key: "menuBarClockDateFormat", template: "MdEEE")
+    private static let timeFormatter: DateFormatter = formatter(key: "menuBarClockTimeFormat", template: "Hmm")
+    private static let cache = NSCache<NSString, NSImage>()
+
+    private static func formatter(key: String, template: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate(UserDefaults.standard.string(forKey: key) ?? template)
+        return formatter
     }
 
-    func tearDown() {
-        timer?.invalidate()
-        observers.forEach(NotificationCenter.default.removeObserver)
-        NSStatusBar.system.removeStatusItem(statusItem)
-    }
-
-    /// Shows the current time and arms a timer for the next minute boundary;
-    /// nothing runs in between.
-    private func tick() {
-        let now = Date()
+    /// The image for this minute; one per minute is drawn, the rest reuse it.
+    static func image(at now: Date = Date()) -> NSImage {
         let date = dateFormatter.dateFormat.isEmpty ? "" : dateFormatter.string(from: now)
-        statusItem.button?.image = Self.image(date: date, time: timeFormatter.string(from: now))
-        statusItem.button?.toolTip = DateFormatter.localizedString(from: now, dateStyle: .full, timeStyle: .short)
-        let nextMinute = Calendar.current.nextDate(after: now, matching: DateComponents(second: 0),
-                                                   matchingPolicy: .nextTime) ?? now.addingTimeInterval(60)
-        timer?.invalidate()
-        let timer = Timer(fire: nextMinute.addingTimeInterval(0.05), interval: 0, repeats: false) { [weak self] _ in
-            self?.tick()
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        let time = timeFormatter.string(from: now)
+        let key = "\(date)|\(time)" as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+        let image = image(date: date, time: time)
+        cache.setObject(image, forKey: key)
+        return image
     }
 
-    /// The two lines as one template image, so macOS tints it like its own
-    /// items and dims it with them. The time is the larger line; the date
-    /// sits above it a little lighter. Height matches the readings (22 pt).
+    /// Drawn in the label color at draw time, like the gauges beside it, so
+    /// it follows light and dark menu bars. Height matches the readings (22 pt).
     static func image(date: String, time: String) -> NSImage {
         var timeFont = NSFont.monospacedDigitSystemFont(ofSize: date.isEmpty ? 12.5 : 11, weight: .bold)
         if let rounded = timeFont.fontDescriptor.withDesign(.rounded) {
             timeFont = NSFont(descriptor: rounded, size: timeFont.pointSize) ?? timeFont
         }
-        let timeAttributes: [NSAttributedString.Key: Any] = [.font: timeFont, .foregroundColor: NSColor.black, .kern: -0.3]
-        let dateAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 8.5, weight: .semibold),
-            .foregroundColor: NSColor.black.withAlphaComponent(0.75), .kern: -0.1]
-        let timeSize = (time as NSString).size(withAttributes: timeAttributes)
-        let dateSize = (date as NSString).size(withAttributes: dateAttributes)
+        let dateFont = NSFont.systemFont(ofSize: 8.5, weight: .semibold)
+        let timeSize = (time as NSString).size(withAttributes: [.font: timeFont, .kern: -0.3])
+        let dateSize = (date as NSString).size(withAttributes: [.font: dateFont, .kern: -0.1])
         let width = ceil(max(timeSize.width, dateSize.width)) + 2
         let image = NSImage(size: NSSize(width: width, height: 22), flipped: false) { _ in
+            let timeAttributes: [NSAttributedString.Key: Any] = [.font: timeFont, .kern: -0.3, .foregroundColor: NSColor.labelColor]
+            let dateAttributes: [NSAttributedString.Key: Any] = [.font: dateFont, .kern: -0.1,
+                                                                 .foregroundColor: NSColor.labelColor.withAlphaComponent(0.75)]
             if date.isEmpty {
                 (time as NSString).draw(at: NSPoint(x: (width - timeSize.width) / 2, y: (22 - timeSize.height) / 2),
                                         withAttributes: timeAttributes)
@@ -93,11 +62,8 @@ final class MenuBarClockController {
             }
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = false
+        image.accessibilityDescription = "\(date) \(time)"
         return image
-    }
-
-    @objc private func clicked() {
-        if NSApp.currentEvent?.type == .rightMouseUp { onRightClick?(statusItem.button) }
     }
 }

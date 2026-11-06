@@ -496,6 +496,12 @@ final class StatusItemController {
             if metricsTitle.length > 0 {
                 if title.length > 0 { title.append(NSAttributedString(string: "  ")) }
                 title.append(metricsTitle)
+                // The date and time closes the readings, in the same item so
+                // it clicks and moves with them.
+                if MenuBarClock.isEnabled {
+                    title.append(NSAttributedString(string: "  "))
+                    title.append(MenuBarRenderer.clockAttachment())
+                }
             }
         }
 

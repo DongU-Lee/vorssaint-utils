@@ -12,8 +12,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     private var statusController: StatusItemController!
     /// Folds other apps' menu bar icons into one item (macOS 27 and later).
     private var menuBarHider: MenuBarHiderController?
-    /// The date and time as an item of our own, among the readings.
-    private var menuBarClock: MenuBarClockController?
     private let popover = NSPopover()
     private var popoverDismissMonitor: Any?
     private var popoverLocalDismissMonitor: Any?
@@ -125,10 +123,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         statusController = StatusItemController()
         if #available(macOS 27, *) { menuBarHider = MenuBarHiderController() }
         menuBarHider?.onRightClick = { [weak self] button in self?.showContextMenu(from: button) }
-        if UserDefaults.standard.object(forKey: "menuBarClock") as? Bool ?? true {
-            menuBarClock = MenuBarClockController()
-            menuBarClock?.onRightClick = { [weak self] button in self?.showContextMenu(from: button) }
-        }
         statusController.onLeftClick = { [weak self] in
             self?.captureStatusClick()
             self?.toggleMainPopover()
@@ -325,7 +319,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     func applicationWillTerminate(_ notification: Notification) {
         isTerminating = true
         menuBarHider?.tearDown()
-        menuBarClock?.tearDown()
         CommandBarService.shared.restoreBorrowedInputSource()
         if AppFeature.notch.isAvailable { NotchService.shared.stop(restoreCapture: false) }
         // Quitting properly means the start worked, whenever it happened.
