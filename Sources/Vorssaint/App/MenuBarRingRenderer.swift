@@ -3,13 +3,16 @@
 
 import AppKit
 
-/// The "Icons" menu bar appearance: CPU, GPU, RAM and disk usage as a two-tone
-/// glyph with a gauge arc hugging its right side, and the battery as a battery
-/// outline with its percentage inside.
+/// The "Icons" menu bar appearance. Every reading is one shape: a small bold
+/// glyph sitting inside a half ring that runs up its right side from six to
+/// twelve o'clock and fills with the value. The battery is the same half
+/// ring with only its percentage inside, so it takes no more width than a
+/// CPU reading and needs no battery pictogram.
 ///
-/// Everything draws in the label color, like the system's own items; color
-/// only ever marks a warning (high load, low battery), and only on the gauge
-/// or the battery number.
+/// Glyphs draw in the label color like the system's own items. The ring
+/// carries each reading's hue (blue CPU, green GPU, purple RAM, orange disk,
+/// green battery) unless `coloredGauges` is off, and turns orange from 85%
+/// and red from 95% or when the battery is low.
 extension MenuBarRenderer {
     private static let ringCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
@@ -17,29 +20,31 @@ extension MenuBarRenderer {
         return cache
     }()
 
-    // Gauge geometry, in points.
-    private static let gaugeRadius: CGFloat = 7.5        // as tall as the glyph
-    private static let gaugeSweep: CGFloat = 70          // degrees either side of three o'clock
-    private static let gaugeWidth: CGFloat = 2
-    private static let gaugeGap: CGFloat = 1.5           // glyph edge to the arc's inner side
-    private static let gaugeMinimumDegrees: CGFloat = 8  // a 0% reading still shows a dot
+    // Geometry, in points.
+    private static let ringRadius: CGFloat = 9.3
+    private static let ringWidth: CGFloat = 2.4
+    private static let glyphSide: CGFloat = 13
+    private static let minimumLevel: CGFloat = 0.045   // a 0% reading still shows a dot
 
-    /// How the arc shows its value.
-    /// - track: a faint full-length track with the level drawn over it.
-    /// - swoosh: one stroke from the bottom, faint there and strengthening to
-    ///   solid at the level, where it ends; the width never changes.
-    /// - swooshTrack: the swoosh with a faint track above the level.
-    enum GaugeStyle: String { case track, swoosh, swooshTrack }
+    /// How the ring shows its value.
+    /// - fade: one stroke, faint at the bottom and solid at the level, where it ends.
+    /// - track: a faint full half ring with the level drawn solid over it.
+    enum GaugeStyle: String { case fade, track }
 
-    /// `defaults write <bundle id> menuBarGaugeStyle swoosh` switches it at
-    /// the next launch.
+    /// `defaults write <bundle id> menuBarGaugeStyle track` switches it at the
+    /// next launch; `menuBarGaugeColored -bool NO` makes every ring monochrome.
     static var gaugeStyle: GaugeStyle = GaugeStyle(
-        rawValue: UserDefaults.standard.string(forKey: "menuBarGaugeStyle") ?? "") ?? .swoosh
+        rawValue: UserDefaults.standard.string(forKey: "menuBarGaugeStyle") ?? "") ?? .fade
+    static var coloredGauges: Bool = UserDefaults.standard.object(forKey: "menuBarGaugeColored") as? Bool ?? true
 
-    /// Usage gauges move in 2% steps, so a jittery reading reuses images.
+    private static let hues: [String: NSColor] = [
+        "CPU": .systemBlue, "GPU": .systemGreen, "RAM": .systemPurple, "DSK": .systemOrange, "BAT": .systemGreen,
+    ]
+
+    /// Usage rings move in 2% steps, so a jittery reading reuses images.
     static func cachedRingImage(label: String, fraction: Double?, style: MenuBarBlockStyle) -> NSImage {
         let step = fraction.map { Int((MenuBarUsageBarSupport.clampedFraction($0) * 50).rounded()) }
-        let key = "ring|\(MenuBarMetricGlyphs.set.rawValue)|\(gaugeStyle.rawValue)|\(label)|\(step.map(String.init) ?? "-")|\(style)" as NSString
+        let key = "ring|\(MenuBarMetricGlyphs.set.rawValue)|\(gaugeStyle.rawValue)|\(coloredGauges)|\(label)|\(step.map(String.init) ?? "-")|\(style)" as NSString
         if let cached = ringCache.object(forKey: key) { return cached }
         let image = ringImage(label: label, fraction: step.map { Double($0) / 50 }, style: style)
         ringCache.setObject(image, forKey: key)
@@ -49,30 +54,34 @@ extension MenuBarRenderer {
     static func cachedRingBatteryImage(percent: Int, isCharging: Bool, isLow: Bool,
                                        style: MenuBarBlockStyle) -> NSImage {
         let percent = max(0, min(100, percent))
-        let key = "ringBattery|\(percent)|\(isCharging)|\(isLow)|\(style)" as NSString
+        let key = "ringBattery|\(gaugeStyle.rawValue)|\(coloredGauges)|\(percent)|\(isCharging)|\(isLow)|\(style)" as NSString
         if let cached = ringCache.object(forKey: key) { return cached }
         let image = ringBatteryImage(percent: percent, isCharging: isCharging, isLow: isLow, style: style)
         ringCache.setObject(image, forKey: key)
         return image
     }
 
-    static func ringImage(label: String, fraction: Double?, style: MenuBarBlockStyle) -> NSImage {
+    private static func itemSize(style: MenuBarBlockStyle) -> (size: NSSize, center: NSPoint) {
         let height: CGFloat = style == .readable ? 22 : 20
-        let side = MenuBarMetricGlyphs.side
-        let glyphRect = NSRect(x: 0.5, y: (height - side) / 2, width: side, height: side)
-        // The arc's ends are its innermost points; place them gaugeGap off the glyph.
-        let innerReach = gaugeRadius * cos(gaugeSweep * .pi / 180) - gaugeWidth / 2
-        let center = NSPoint(x: glyphRect.maxX + gaugeGap - innerReach, y: height / 2)
-        let width = ceil(center.x + gaugeRadius + gaugeWidth / 2 + 0.5)
-        // The handler runs at draw time; the set and style are fixed now so
-        // the image matches the key it was cached under.
+        let center = NSPoint(x: 1 + ringRadius + ringWidth / 2, y: height / 2)
+        return (NSSize(width: ceil(center.x + ringRadius + ringWidth / 2 + 0.5), height: height), center)
+    }
+
+    static func ringImage(label: String, fraction: Double?, style: MenuBarBlockStyle) -> NSImage {
+        let (size, center) = itemSize(style: style)
+        // The handler runs at draw time; fix the set and style now so the
+        // image matches the key it was cached under.
         let set = MenuBarMetricGlyphs.set
         let gauge = gaugeStyle
+        let hue = coloredGauges ? hues[label] : nil
+        let value = fraction.map { CGFloat(MenuBarUsageBarSupport.clampedFraction($0)) }
+        let warning: NSColor? = value.map { $0 >= 0.95 ? .systemRed : $0 >= 0.85 ? .systemOrange : nil } ?? nil
 
-        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
-            drawGauge(center: center, fraction: fraction, style: gauge)
+        let image = NSImage(size: size, flipped: false) { _ in
+            drawRing(center: center, level: value, color: warning ?? hue ?? .labelColor, style: gauge)
             if let glyph = MenuBarMetricGlyphs.image(for: label, set: set) {
-                tinted(glyph, size: glyphRect.size).draw(in: glyphRect)
+                let box = NSRect(x: center.x - glyphSide / 2, y: center.y - glyphSide / 2, width: glyphSide, height: glyphSide)
+                tinted(glyph, size: box.size).draw(in: box)
             }
             return true
         }
@@ -81,113 +90,82 @@ extension MenuBarRenderer {
         return image
     }
 
-    /// The gauge filling from the bottom up in the current `gaugeStyle`;
-    /// orange from 85%, red from 95%. A missing reading draws the empty track.
-    private static func drawGauge(center: NSPoint, fraction: Double?, style gaugeStyle: GaugeStyle) {
-        let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let trackAlpha: CGFloat = isDark ? 0.30 : 0.22
-        let value = fraction.map { CGFloat(MenuBarUsageBarSupport.clampedFraction($0)) }
-        // Where the level ends, as a fraction of the arc; never below the dot.
-        let level = value.map { max(gaugeMinimumDegrees / (2 * gaugeSweep), $0) }
-        let levelColor: NSColor = {
-            guard let value else { return .labelColor }
-            return value >= 0.95 ? .systemRed : value >= 0.85 ? .systemOrange : .labelColor
-        }()
-        func angle(_ t: CGFloat) -> CGFloat { -gaugeSweep + 2 * gaugeSweep * t }
-
-        if gaugeStyle == .track {
-            let track = NSBezierPath()
-            track.appendArc(withCenter: center, radius: gaugeRadius, startAngle: angle(0), endAngle: angle(1))
-            track.lineWidth = gaugeWidth
-            track.lineCapStyle = .round
-            NSColor.labelColor.withAlphaComponent(trackAlpha).setStroke()
-            track.stroke()
-            guard let level else { return }
-            let arc = NSBezierPath()
-            arc.appendArc(withCenter: center, radius: gaugeRadius, startAngle: angle(0), endAngle: angle(level))
-            arc.lineWidth = gaugeWidth
-            arc.lineCapStyle = .round
-            levelColor.setStroke()
-            arc.stroke()
-            return
-        }
-
-        // One stroke drawn as short butt-capped pieces at a constant width,
-        // each at its own opacity: faint at the bottom, solid at the level.
-        // A missing reading is all faint.
-        let pieces = 48
-        func shade(at t: CGFloat) -> (alpha: CGFloat, color: NSColor)? {
-            guard let level else { return (trackAlpha, .labelColor) }
-            if t <= level { return (trackAlpha + (1 - trackAlpha) * t / level, levelColor) }
-            return gaugeStyle == .swooshTrack ? (trackAlpha * 0.8, .labelColor) : nil
-        }
-        var end: CGFloat = 0
-        for i in 0..<pieces {
-            let t0 = CGFloat(i) / CGFloat(pieces), t1 = CGFloat(i + 1) / CGFloat(pieces)
-            guard let s = shade(at: (t0 + t1) / 2) else { break }
-            let piece = NSBezierPath()
-            // A hair of overlap hides seams between pieces.
-            piece.appendArc(withCenter: center, radius: gaugeRadius, startAngle: angle(t0) - 0.15, endAngle: angle(t1) + 0.15)
-            piece.lineWidth = gaugeWidth
-            piece.lineCapStyle = .butt
-            s.color.withAlphaComponent(s.alpha).setStroke()
-            piece.stroke()
-            end = t1
-        }
-        // Round caps: both ends of what was drawn, and the head at the level.
-        func cap(at t: CGFloat, _ shade: (alpha: CGFloat, color: NSColor)) {
-            let radians = angle(t) * .pi / 180
-            let point = NSPoint(x: center.x + gaugeRadius * cos(radians), y: center.y + gaugeRadius * sin(radians))
-            shade.color.withAlphaComponent(shade.alpha).setFill()
-            NSBezierPath(ovalIn: NSRect(x: point.x - gaugeWidth / 2, y: point.y - gaugeWidth / 2,
-                                        width: gaugeWidth, height: gaugeWidth)).fill()
-        }
-        if let start = shade(at: 0) { cap(at: 0, start) }
-        if let level { cap(at: level, (1, levelColor)) }
-        if end > (level ?? 0), let tail = shade(at: end) { cap(at: end, tail) }
-    }
-
-    /// A battery outline with the percentage inside, the terminal at half
-    /// strength. While charging a bolt takes the terminal's place; when low the
-    /// number turns red.
+    /// The percentage inside the half ring; a bolt beside it while charging,
+    /// red ring and number when low.
     static func ringBatteryImage(percent: Int, isCharging: Bool, isLow: Bool, style: MenuBarBlockStyle) -> NSImage {
-        let height: CGFloat = style == .readable ? 22 : 20
-        let body = NSRect(x: 0.5, y: (height - 11) / 2, width: 21, height: 11)
-        let width = ceil(body.maxX + 1 + 4 + 0.5)
+        let (size, center) = itemSize(style: style)
+        let gauge = gaugeStyle
         let low = isLow || (percent <= 20 && !isCharging)
+        let ringColor: NSColor = low ? .systemRed : (coloredGauges ? hues["BAT"]! : .labelColor)
 
-        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
-            let border: CGFloat = 1.25
-            let outline = NSBezierPath(roundedRect: body.insetBy(dx: border / 2, dy: border / 2), xRadius: 3, yRadius: 3)
-            outline.lineWidth = border
-            NSColor.labelColor.setStroke()
-            outline.stroke()
-
-            if isCharging, let bolt = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 7, weight: .bold)) {
-                let boltRect = NSRect(x: body.maxX + 0.8, y: body.midY - 3.5, width: 4, height: 7)
-                tinted(bolt, size: boltRect.size).draw(in: boltRect)
-            } else {
-                NSColor.labelColor.withAlphaComponent(0.5).setFill()
-                NSBezierPath(roundedRect: NSRect(x: body.maxX + 1, y: body.midY - 2, width: 1.5, height: 4),
-                             xRadius: 0.75, yRadius: 0.75).fill()
-            }
-
-            var font = NSFont.monospacedDigitSystemFont(ofSize: percent >= 100 ? 7.5 : 8.5, weight: .semibold)
+        let image = NSImage(size: size, flipped: false) { _ in
+            drawRing(center: center, level: CGFloat(percent) / 100, color: ringColor, style: gauge)
+            var font = NSFont.monospacedDigitSystemFont(ofSize: percent >= 100 ? 7.6 : 9, weight: .heavy)
             if let rounded = font.fontDescriptor.withDesign(.rounded) {
                 font = NSFont(descriptor: rounded, size: font.pointSize) ?? font
             }
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: font, .foregroundColor: low ? NSColor.systemRed : NSColor.labelColor]
+                .font: font, .kern: -0.3, .foregroundColor: low ? NSColor.systemRed : NSColor.labelColor]
             let text = "\(percent)" as NSString
-            let size = text.size(withAttributes: attributes)
-            text.draw(at: NSPoint(x: body.midX - size.width / 2, y: body.midY - size.height / 2),
-                      withAttributes: attributes)
+            let textSize = text.size(withAttributes: attributes)
+            let x = center.x - textSize.width / 2 - (isCharging ? 1.2 : 0)
+            text.draw(at: NSPoint(x: x, y: center.y - textSize.height / 2), withAttributes: attributes)
+            if isCharging, let bolt = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 5.5, weight: .black)) {
+                let boltRect = NSRect(x: x + textSize.width + 0.6, y: center.y + 1.6,
+                                      width: bolt.size.width, height: bolt.size.height)
+                tinted(bolt, size: boltRect.size).draw(in: boltRect)
+            }
             return true
         }
         image.isTemplate = false
         image.accessibilityDescription = "Battery \(percent)%"
         return image
+    }
+
+    /// The half ring from six o'clock up the right side to twelve, filled to
+    /// `level` in `color`. A missing level draws the faint empty ring.
+    private static func drawRing(center: NSPoint, level: CGFloat?, color: NSColor, style: GaugeStyle) {
+        let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let faint: CGFloat = isDark ? 0.28 : 0.22
+        let level = level.map { max(minimumLevel, $0) }
+        func angle(_ t: CGFloat) -> CGFloat { -90 + 180 * t }
+        func arc(_ from: CGFloat, _ to: CGFloat, _ stroke: NSColor, round: Bool) {
+            let path = NSBezierPath()
+            path.appendArc(withCenter: center, radius: ringRadius, startAngle: angle(from), endAngle: angle(to))
+            path.lineWidth = ringWidth
+            path.lineCapStyle = round ? .round : .butt
+            stroke.setStroke()
+            path.stroke()
+        }
+        func cap(_ t: CGFloat, _ fill: NSColor) {
+            let radians = angle(t) * .pi / 180
+            let point = NSPoint(x: center.x + ringRadius * cos(radians), y: center.y + ringRadius * sin(radians))
+            fill.setFill()
+            NSBezierPath(ovalIn: NSRect(x: point.x - ringWidth / 2, y: point.y - ringWidth / 2,
+                                        width: ringWidth, height: ringWidth)).fill()
+        }
+
+        guard let level else { return arc(0, 1, NSColor.labelColor.withAlphaComponent(faint), round: true) }
+        switch style {
+        case .track:
+            arc(0, 1, NSColor.labelColor.withAlphaComponent(faint), round: true)
+            arc(0, level, color, round: true)
+        case .fade:
+            // Short butt-capped pieces, each a step more opaque than the last,
+            // with a round dot closing each end.
+            let pieces = 48
+            for i in 0..<pieces {
+                let t0 = CGFloat(i) / CGFloat(pieces), t1 = CGFloat(i + 1) / CGFloat(pieces)
+                let middle = (t0 + t1) / 2
+                if middle > level { break }
+                let alpha = faint + (1 - faint) * middle / level
+                // A hair of overlap hides seams between pieces.
+                arc(t0 - 0.001, t1 + 0.001, color.withAlphaComponent(alpha), round: false)
+            }
+            cap(0, color.withAlphaComponent(faint))
+            cap(level, color)
+        }
     }
 
     /// A template image filled with the label color of the current drawing

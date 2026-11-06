@@ -10,12 +10,11 @@ import AppKit
 /// - `mingcute`: MingCute icons (https://github.com/Richard9394/MingCute,
 ///   Apache License 2.0, Copyright (c) Richard9394), unmodified SVG, drawn
 ///   two-tone: the filled variant at a low opacity under the line variant.
-/// - `custom`: Vorssaint's own set as filled silhouettes with the detail cut
-///   out of them, the weight of macOS's own menu bar icons (Wi-Fi, battery,
-///   Control Center are all solid): a chip with a ring around its die and
-///   two pins a side, a card with its fan cut out and its connector foot, a stick with three chips
-///   cut out, a drive with its slot and light, and three tiles plus a dot
-///   for the one tucked away.
+/// - `custom`: Vorssaint's own set, bold monoline (2.3 unit stroke, round
+///   caps, 3 unit corners) with one detail each so it stays clean at 13 pt
+///   inside the gauge ring: a chip with its die and two pins a side, a card
+///   with one fan and its connector foot, a stick with three chips and its
+///   pins, a drive with its slot and light, and a 2x2 grid for the tray.
 ///
 /// Either way the result is a template image, so macOS tints it for light
 /// and dark menu bars like its own items.
@@ -130,22 +129,22 @@ enum MenuBarMetricGlyphs {
     """
 
     private static let customChip = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M8,5h8a3,3 0 0 1 3,3v8a3,3 0 0 1 -3,3h-8a3,3 0 0 1 -3,-3v-8a3,3 0 0 1 3,-3zM10.200000000000001,8.8h3.6000000000000005a1.4,1.4 0 0 1 1.4,1.4v3.6000000000000005a1.4,1.4 0 0 1 -1.4,1.4h-3.6000000000000005a1.4,1.4 0 0 1 -1.4,-1.4v-3.6000000000000005a1.4,1.4 0 0 1 1.4,-1.4z"/><path d="M11.2,10.6h1.5999999999999999a0.6,0.6 0 0 1 0.6,0.6v1.5999999999999999a0.6,0.6 0 0 1 -0.6,0.6h-1.5999999999999999a0.6,0.6 0 0 1 -0.6,-0.6v-1.5999999999999999a0.6,0.6 0 0 1 0.6,-0.6zM8.4,2.2h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM15.600000000000001,2.2h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM8.4,18.8h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM15.600000000000001,18.8h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM3.0,7.6h1.4a0.8,0.8 0 0 1 0.8,0.8v0.0a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-0.0a0.8,0.8 0 0 1 0.8,-0.8zM3.0,14.8h1.4a0.8,0.8 0 0 1 0.8,0.8v0.0a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-0.0a0.8,0.8 0 0 1 0.8,-0.8zM19.6,7.6h1.4a0.8,0.8 0 0 1 0.8,0.8v0.0a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-0.0a0.8,0.8 0 0 1 0.8,-0.8zM19.6,14.8h1.4a0.8,0.8 0 0 1 0.8,0.8v0.0a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-0.0a0.8,0.8 0 0 1 0.8,-0.8z"/></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="3.2"/><rect x="9.4" y="9.4" width="5.2" height="5.2" rx="1.1" fill="currentColor" stroke="none"/><path stroke-width="2" d="M9 5V2.4M15 5V2.4M9 19v2.6M15 19v2.6M5 9H2.4M5 15H2.4M19 9h2.6M19 15h2.6"/></svg>
     """
 
     private static let customCard = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M5,6h14a3,3 0 0 1 3,3v5a3,3 0 0 1 -3,3h-14a3,3 0 0 1 -3,-3v-5a3,3 0 0 1 3,-3zM11.1,11.5a3.4,3.4 0 1 0 6.8,0a3.4,3.4 0 1 0 -6.8,0z"/><path d="M13.3,11.5a1.2,1.2 0 1 0 2.4,0a1.2,1.2 0 1 0 -2.4,0zM6.4,16h3.2a0.9,0.9 0 0 1 0.9,0.9v2.2a0.9,0.9 0 0 1 -0.9,0.9h-3.2a0.9,0.9 0 0 1 -0.9,-0.9v-2.2a0.9,0.9 0 0 1 0.9,-0.9z"/></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5.5" width="19" height="11.5" rx="3.2"/><circle cx="15" cy="11.25" r="3"/><path d="M7 17v3.2h5V17"/></svg>
     """
 
     private static let customStick = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M4.4,6.5h15.2a2.4,2.4 0 0 1 2.4,2.4v4.2a2.4,2.4 0 0 1 -2.4,2.4h-15.2a2.4,2.4 0 0 1 -2.4,-2.4v-4.2a2.4,2.4 0 0 1 2.4,-2.4zM6.3,9h1.4a0.8,0.8 0 0 1 0.8,0.8v2.4a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-2.4a0.8,0.8 0 0 1 0.8,-0.8zM11.3,9h1.4a0.8,0.8 0 0 1 0.8,0.8v2.4a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-2.4a0.8,0.8 0 0 1 0.8,-0.8zM16.3,9h1.4a0.8,0.8 0 0 1 0.8,0.8v2.4a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-2.4a0.8,0.8 0 0 1 0.8,-0.8z"/><path d="M5.5,15h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM9.700000000000001,15h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM13.9,15h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM18.1,15h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8z"/></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="9.5" rx="2.6"/><rect x="5.6" y="8.6" width="3" height="4.3" rx="0.8" fill="currentColor" stroke="none"/><rect x="10.5" y="8.6" width="3" height="4.3" rx="0.8" fill="currentColor" stroke="none"/><rect x="15.4" y="8.6" width="3" height="4.3" rx="0.8" fill="currentColor" stroke="none"/><path stroke-width="2" d="M6.5 15.5v3M11 15.5v3M15.5 15.5v3M20 15.5v3"/></svg>
     """
 
     private static let customDrive = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M5,7h14a3,3 0 0 1 3,3v4a3,3 0 0 1 -3,3h-14a3,3 0 0 1 -3,-3v-4a3,3 0 0 1 3,-3zM5.7,10.3h6.6a0.7,0.7 0 0 1 0.7,0.7v0.0a0.7,0.7 0 0 1 -0.7,0.7h-6.6a0.7,0.7 0 0 1 -0.7,-0.7v-0.0a0.7,0.7 0 0 1 0.7,-0.7zM16.1,12a1.4,1.4 0 1 0 2.8,0a1.4,1.4 0 1 0 -2.8,0z"/></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="3.2"/><path d="M6.5 12h6.5"/><circle cx="17" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>
     """
 
     private static let customGrid = """
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M5.4,3h3.2a2.4,2.4 0 0 1 2.4,2.4v3.2a2.4,2.4 0 0 1 -2.4,2.4h-3.2a2.4,2.4 0 0 1 -2.4,-2.4v-3.2a2.4,2.4 0 0 1 2.4,-2.4zM15.4,3h3.2a2.4,2.4 0 0 1 2.4,2.4v3.2a2.4,2.4 0 0 1 -2.4,2.4h-3.2a2.4,2.4 0 0 1 -2.4,-2.4v-3.2a2.4,2.4 0 0 1 2.4,-2.4zM5.4,13h3.2a2.4,2.4 0 0 1 2.4,2.4v3.2a2.4,2.4 0 0 1 -2.4,2.4h-3.2a2.4,2.4 0 0 1 -2.4,-2.4v-3.2a2.4,2.4 0 0 1 2.4,-2.4zM16.3,15h1.4a1.3,1.3 0 0 1 1.3,1.3v1.4a1.3,1.3 0 0 1 -1.3,1.3h-1.4a1.3,1.3 0 0 1 -1.3,-1.3v-1.4a1.3,1.3 0 0 1 1.3,-1.3z"/></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.6" height="7.6" rx="2.2"/><rect x="13.4" y="3" width="7.6" height="7.6" rx="2.2"/><rect x="3" y="13.4" width="7.6" height="7.6" rx="2.2"/><rect x="13.4" y="13.4" width="7.6" height="7.6" rx="2.2"/></svg>
     """
 }
