@@ -348,8 +348,22 @@ final class MenuBarExtra: NSObject {
         }
         hiderLog.notice("\(right ? "right" : "left", privacy: .public) click on \(self.label, privacy: .public) sent")
         let delay = UserDefaults.standard.object(forKey: "menuBarTrayPointerReturnDelay") as? Double ?? 0.4
+        let label = self.label
         DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, 0.05)) {
-            if let pointer, delay > 0 { CGWarpMouseCursorPosition(pointer) }
+            if let pointer, delay > 0 {
+                // A warp alone can be undone while the app's menu is tracking
+                // the mouse; a posted move is handled like a real one.
+                CGWarpMouseCursorPosition(pointer)
+                let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: pointer,
+                                   mouseButton: .left)
+                move?.setIntegerValueField(.eventSourceUserData, value: Self.postedMarker)
+                move?.post(tap: .cghidEventTap)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    let now = CGEvent(source: nil)?.location ?? .zero
+                    let back = hypot(now.x - pointer.x, now.y - pointer.y) < 2
+                    hiderLog.notice("pointer after \(label, privacy: .public): back \(back, privacy: .public) at \(now.x, privacy: .public),\(now.y, privacy: .public) wanted \(pointer.x, privacy: .public),\(pointer.y, privacy: .public)")
+                }
+            }
             if hidden { PointerVisibility.show() }
         }
     }
