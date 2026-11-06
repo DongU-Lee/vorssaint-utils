@@ -474,7 +474,11 @@ struct HiddenAppsTray: View {
     let onHideOthers: () -> Void
     let onRequestAccess: () -> Void
 
-    private let columns = Array(repeating: GridItem(.fixed(48), spacing: 10), count: 4)
+    // Compact, close to menu bar scale: 32 pt tiles, six to a row.
+    private static let tile: CGFloat = 32
+    private static let spacing: CGFloat = 6
+    private static let perRow = 6
+    private let columns = Array(repeating: GridItem(.fixed(Self.tile), spacing: Self.spacing), count: Self.perRow)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -491,7 +495,7 @@ struct HiddenAppsTray: View {
                 if extras.isEmpty {
                     message("숨긴 아이콘 없음")
                 } else {
-                    LazyVGrid(columns: columns, spacing: 10) {
+                    LazyVGrid(columns: columns, spacing: Self.spacing) {
                         ForEach(extras.indices, id: \.self) { index in
                             TrayTile(extra: extras[index],
                                      action: { onOpen(extras[index]) },
@@ -506,8 +510,8 @@ struct HiddenAppsTray: View {
                     .font(.callout)
             }
         }
-        .padding(14)
-        .frame(width: 4 * 48 + 3 * 10 + 28)
+        .padding(10)
+        .frame(width: CGFloat(Self.perRow) * Self.tile + CGFloat(Self.perRow - 1) * Self.spacing + 20)
     }
 
     private func message(_ text: String) -> some View {
@@ -533,17 +537,17 @@ private struct TrayTile: View {
                     Image(systemName: "app.dashed").resizable().foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 34, height: 34)
-            .frame(width: 48, height: 48)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .frame(width: 22, height: 22)
+            .frame(width: 32, height: 32)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.primary.opacity(hovering ? 0.12 : 0.05)))
             if extra.siblingCount > 1 {
                 Text("\(extra.index + 1)")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 7.5, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 15, height: 15)
+                    .frame(width: 11, height: 11)
                     .background(Circle().fill(Color.secondary))
-                    .offset(x: 2, y: 2)
+                    .offset(x: 1.5, y: 1.5)
             }
         }
         // SwiftUI buttons only take the left button; this takes both.
