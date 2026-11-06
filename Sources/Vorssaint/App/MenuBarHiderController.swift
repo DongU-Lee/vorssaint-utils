@@ -3,9 +3,10 @@
 
 import AppKit
 import ApplicationServices
+import SwiftUI
 
-/// Folds every other app's menu bar icon behind one item of ours and lists the
-/// hidden ones in a drop-down menu.
+/// Folds every other app's menu bar icon behind one item of ours and shows the
+/// hidden ones as a grid of app icons in a tray under it.
 ///
 /// macOS 27 ejects a status item that is inflated to push others off screen,
 /// the trick older menu bar managers used. This uses the allow-list behind
@@ -16,9 +17,9 @@ import ApplicationServices
 ///
 /// Hiding is per app, so an app with several icons hides or shows them
 /// together. Listing the hidden icons needs Accessibility; hiding does not.
-final class MenuBarHiderController: NSObject, NSMenuDelegate {
+final class MenuBarHiderController: NSObject {
     private let statusItem: NSStatusItem
-    private let menu = NSMenu()
+    private let popover = NSPopover()
     private let ownBundleID = Bundle.main.bundleIdentifier ?? ""
     /// Non-nil while other apps' icons are hidden.
     private var assertion: NativeMenuBarVisibility.Assertion?
@@ -31,8 +32,9 @@ final class MenuBarHiderController: NSObject, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
         statusItem.autosaveName = "VorssaintMenuBarHider"
-        menu.delegate = self
-        statusItem.menu = menu
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePopover)
+        popover.behavior = .transient
         updateIcon()
         collapse()
     }
@@ -80,65 +82,58 @@ final class MenuBarHiderController: NSObject, NSMenuDelegate {
     }
 
     private func updateIcon() {
-        let symbol: String
+        let glyph: String
         let tip: String
         if !NativeMenuBarVisibility.isAvailable {
-            symbol = "exclamationmark.triangle"
+            glyph = "WARN"
             tip = "이 macOS에서는 아이콘 숨기기를 쓸 수 없습니다"
         } else if isCollapsed {
-            symbol = "chevron.compact.left"
+            glyph = "TRAY"
             tip = "숨긴 메뉴 막대 아이콘"
         } else {
-            symbol = "chevron.compact.right"
+            glyph = "TRAY"
             tip = "메뉴 막대 아이콘 숨기기"
         }
-        statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
+        // Same family and size as the CPU, GPU and RAM icons beside it.
+        let image = MenuBarMetricGlyphs.image(for: glyph)?.copy() as? NSImage
+        image?.size = NSSize(width: MenuBarMetricGlyphs.side, height: MenuBarMetricGlyphs.side)
+        image?.accessibilityDescription = tip
+        statusItem.button?.image = image
+        // Dimmed while everything is showing, so the state reads at a glance.
+        statusItem.button?.appearsDisabled = NativeMenuBarVisibility.isAvailable && !isCollapsed
         statusItem.button?.toolTip = tip
     }
 
-    // MARK: - Menu
+    // MARK: - Tray
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-        guard NativeMenuBarVisibility.isAvailable else {
-            menu.addItem(disabled("이 macOS에서는 아이콘 숨기기를 쓸 수 없습니다"))
-            return
-        }
-        if isCollapsed {
-            addHiddenIconItems(to: menu)
-            menu.addItem(.separator())
-            menu.addItem(action("아이콘 모두 보이기", #selector(showAll)))
-        } else {
-            menu.addItem(action("다른 앱 아이콘 숨기기", #selector(hideOthers)))
-        }
+    @objc private func togglePopover() {
+        if popover.isShown { return popover.performClose(nil) }
+        guard let button = statusItem.button else { return }
+        popover.contentViewController = NSHostingController(rootView: HiddenAppsTray(
+            state: trayState(),
+            onOpen: { [weak self] extra in
+                self?.popover.performClose(nil)
+                self?.open(extra)
+            },
+            onShowAll: { [weak self] in self?.popover.performClose(nil); self?.expand() },
+            onHideOthers: { [weak self] in self?.popover.performClose(nil); self?.collapse() },
+            onRequestAccess: { [weak self] in
+                self?.popover.performClose(nil)
+                Permissions.shared.requestAccessibility()
+            }))
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
-    private func addHiddenIconItems(to menu: NSMenu) {
-        guard AXIsProcessTrusted() else {
-            menu.addItem(action("숨긴 아이콘을 보려면 손쓰기 권한 허용…", #selector(requestAccessibility)))
-            return
-        }
-        let extras = MenuBarExtra.hiddenCandidates(excludingBundleID: ownBundleID)
-        guard !extras.isEmpty else {
-            menu.addItem(disabled("숨긴 아이콘 없음"))
-            return
-        }
-        for extra in extras {
-            let item = action(extra.label, #selector(openExtra(_:)))
-            item.image = extra.appIcon
-            item.representedObject = extra
-            menu.addItem(item)
-        }
+    private func trayState() -> HiddenAppsTray.State {
+        guard NativeMenuBarVisibility.isAvailable else { return .unavailable }
+        guard isCollapsed else { return .expanded }
+        guard AXIsProcessTrusted() else { return .needsAccess }
+        return .collapsed(MenuBarExtra.hiddenCandidates(excludingBundleID: ownBundleID))
     }
-
-    @objc private func showAll() { expand() }
-    @objc private func hideOthers() { collapse() }
-    @objc private func requestAccessibility() { Permissions.shared.requestAccessibility() }
 
     /// Brings the picked app's icons back for a moment, opens the one that was
     /// picked, and hides them again after the next click anywhere.
-    @objc private func openExtra(_ sender: NSMenuItem) {
-        guard let extra = sender.representedObject as? MenuBarExtra else { return }
+    private func open(_ extra: MenuBarExtra) {
         guard let bundleID = extra.bundleID else {
             // macOS cannot allow-list an app without a bundle id, so it stays
             // hidden; pressing it is all that is left to try.
@@ -172,18 +167,6 @@ final class MenuBarHiderController: NSObject, NSMenuDelegate {
         if let rehideMonitor { NSEvent.removeMonitor(rehideMonitor) }
         rehideMonitor = nil
     }
-
-    private func action(_ title: String, _ selector: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-        item.target = self
-        return item
-    }
-
-    private func disabled(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
-    }
 }
 
 // MARK: - Other apps' menu bar icons, read through Accessibility
@@ -194,6 +177,8 @@ final class MenuBarExtra: NSObject {
     let index: Int
     let label: String
     let appIcon: NSImage?
+    /// How many icons this app has in the bar; the tray numbers them.
+    let siblingCount: Int
     private let element: AXUIElement
 
     private init(app: NSRunningApplication, index: Int, count: Int, element: AXUIElement) {
@@ -212,11 +197,8 @@ final class MenuBarExtra: NSObject {
         } else {
             label = count > 1 ? "\(name) \(index + 1)" : name
         }
-        appIcon = app.icon.map { icon in
-            let copy = icon.copy() as! NSImage
-            copy.size = NSSize(width: 16, height: 16)
-            return copy
-        }
+        appIcon = app.icon
+        siblingCount = count
     }
 
     func press() {
@@ -264,6 +246,98 @@ final class MenuBarExtra: NSObject {
         var value: AnyObject?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
         return value as? String
+    }
+}
+
+// MARK: - The tray under the hider item
+
+struct HiddenAppsTray: View {
+    enum State {
+        case unavailable, needsAccess, expanded
+        case collapsed([MenuBarExtra])
+    }
+
+    let state: State
+    let onOpen: (MenuBarExtra) -> Void
+    let onShowAll: () -> Void
+    let onHideOthers: () -> Void
+    let onRequestAccess: () -> Void
+
+    private let columns = Array(repeating: GridItem(.fixed(48), spacing: 10), count: 4)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            switch state {
+            case .unavailable:
+                message("이 macOS에서는 아이콘 숨기기를 쓸 수 없습니다")
+            case .needsAccess:
+                message("숨긴 아이콘을 보려면 손쓰기 권한이 필요합니다")
+                Button("권한 허용…", action: onRequestAccess)
+            case .expanded:
+                message("모든 메뉴 막대 아이콘이 보이는 중입니다")
+                Button("다른 앱 아이콘 숨기기", action: onHideOthers)
+            case .collapsed(let extras):
+                if extras.isEmpty {
+                    message("숨긴 아이콘 없음")
+                } else {
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(extras.indices, id: \.self) { index in
+                            TrayTile(extra: extras[index]) { onOpen(extras[index]) }
+                        }
+                    }
+                }
+                Divider()
+                Button("아이콘 모두 보이기", action: onShowAll)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+            }
+        }
+        .padding(14)
+        .frame(width: 4 * 48 + 3 * 10 + 28)
+    }
+
+    private func message(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct TrayTile: View {
+    let extra: MenuBarExtra
+    let action: () -> Void
+    @SwiftUI.State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .bottomTrailing) {
+                Group {
+                    if let icon = extra.appIcon {
+                        Image(nsImage: icon).resizable().interpolation(.high)
+                    } else {
+                        Image(systemName: "app.dashed").resizable().foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 34, height: 34)
+                .frame(width: 48, height: 48)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.primary.opacity(hovering ? 0.12 : 0.05)))
+                if extra.siblingCount > 1 {
+                    Text("\(extra.index + 1)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 15, height: 15)
+                        .background(Circle().fill(Color.secondary))
+                        .offset(x: 2, y: 2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(extra.label)
+        .accessibilityLabel(extra.label)
     }
 }
 

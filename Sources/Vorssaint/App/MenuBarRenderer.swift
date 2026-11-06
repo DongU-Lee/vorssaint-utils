@@ -343,7 +343,7 @@ enum MenuBarRenderer {
                                       style: MenuBarBlockStyle) -> [MenuBarSegment] {
         var groups: [[MenuBarSegment]] = []
         let appearance = MenuBarMetricAppearance.current
-        let usesBars = appearance == .bars
+        let usesBars = appearance != .values
         let combineTemperatures = appearance.allowsCombinedTemperatures
             && UserDefaults.standard.bool(forKey: DefaultsKey.menuBarCombineTemperatures)
         let enabled = Set(metrics)
@@ -936,6 +936,9 @@ enum MenuBarRenderer {
                                            fraction: Double?,
                                            style: MenuBarBlockStyle,
                                            pressure: MemoryPressure?) -> NSImage {
+        if MenuBarMetricAppearance.current == .rings {
+            return cachedRingImage(label: label, fraction: fraction, style: style)
+        }
         let innerSteps = style == .readable ? 17 : 15
         let fillLevel = fraction.map { MenuBarUsageBarSupport.fillLevel(for: $0, steps: innerSteps) }
         let fillColorHex = fraction.map {
@@ -1090,6 +1093,10 @@ enum MenuBarRenderer {
                                           externalConnected: Bool,
                                           warning: BatteryWarning,
                                           style: MenuBarBlockStyle) -> NSImage {
+        if MenuBarMetricAppearance.current == .rings {
+            return cachedRingBatteryImage(percent: percent, isCharging: isCharging,
+                                          isLow: nsColor(for: warning) != nil, style: style)
+        }
         let clampedPercent = max(0, min(100, percent))
         let cacheKey = "battery|\(clampedPercent)|\(isCharging)|\(externalConnected)|\(warning)|\(style)" as NSString
         if let cached = blockImageCache.object(forKey: cacheKey) { return cached }

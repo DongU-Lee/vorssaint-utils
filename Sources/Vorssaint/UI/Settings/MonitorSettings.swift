@@ -125,6 +125,8 @@ struct MonitorSettings: View {
                                    selected: appearance == .values) { metricAppearance = "values" }
                 MenuBarStyleChoice(appearance: .bars, title: appearanceStrings.bars,
                                    selected: appearance == .bars) { metricAppearance = "bars" }
+                MenuBarStyleChoice(appearance: .rings, title: "아이콘",
+                                   selected: appearance == .rings) { metricAppearance = "rings" }
             }
             Text(appearanceStrings.caption)
                 .font(.caption)
@@ -132,7 +134,7 @@ struct MonitorSettings: View {
                 .fixedSize(horizontal: false, vertical: true)
             if appearance == .bars {
                 MenuBarUsageBarSettings(strings: appearanceStrings)
-            } else {
+            } else if appearance == .values {
                 SettingsRow(symbol: "thermometer.medium", title: l10n.s.monitorCombineTemperatures,
                             caption: l10n.s.monitorCombineTemperaturesCaption) {
                     Toggle(l10n.s.monitorCombineTemperatures, isOn: $combineTemperatures).labelsHidden()
@@ -309,7 +311,26 @@ private struct MenuBarStyleChoice: View {
                 bar(label: "CPU", fraction: 0.42)
                 bar(label: "RAM", fraction: 0.61)
             }
+        case .rings:
+            HStack(spacing: 6) {
+                Image(nsImage: Self.onDarkBar(MenuBarRenderer.ringImage(label: "CPU", fraction: 0.42, style: .readable)))
+                Image(nsImage: Self.onDarkBar(MenuBarRenderer.ringImage(label: "RAM", fraction: 0.61, style: .readable)))
+                Image(nsImage: Self.onDarkBar(MenuBarRenderer.ringBatteryImage(percent: 78, isCharging: false,
+                                                                               isLow: false, style: .readable)))
+            }
         }
+    }
+
+    /// The renderer draws in the label color at draw time; the mockup sits on
+    /// a dark bar whatever the Settings window's appearance, so draw it dark.
+    private static func onDarkBar(_ image: NSImage) -> NSImage {
+        let output = NSImage(size: image.size)
+        NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
+            output.lockFocus()
+            image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+            output.unlockFocus()
+        }
+        return output
     }
 
     private func block(label: String, value: String) -> some View {
