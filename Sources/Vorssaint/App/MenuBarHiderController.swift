@@ -34,7 +34,10 @@ final class MenuBarHiderController: NSObject {
     private var revealedBundleID: String?
     /// Watches for clicks on the system clock while icons are hidden.
     private var clockMonitor: Any?
-    private var clockClickFrame: CGRect?
+    /// The clock under a mouse-down, resolved before any lift so the press
+    /// that follows needs no lookup and the bar is unrestricted as briefly
+    /// as possible.
+    private var clockClick: SystemClock.Item?
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -130,21 +133,24 @@ final class MenuBarHiderController: NSObject {
         guard let location = event.cgEvent?.location else { return }
         switch event.type {
         case .leftMouseDown:
-            clockClickFrame = nil
+            clockClick = nil
             guard isCollapsed, event.modifierFlags.isDisjoint(with: [.command, .control]),
                   let clock = SystemClock.items().first(where: { $0.frame.contains(location) }),
                   !SystemClock.isNotificationCenterOpen else { return }
-            clockClickFrame = clock.frame
+            clockClick = clock
         case .leftMouseUp:
-            guard let frame = clockClickFrame else { return }
-            clockClickFrame = nil
-            if frame.contains(location) { openNotificationCenter(at: location) }
+            guard let clock = clockClick else { return }
+            clockClick = nil
+            if clock.frame.contains(location) { openNotificationCenter(pressing: clock) }
         default:
             break
         }
     }
 
-    private func openNotificationCenter(at location: CGPoint) {
+    /// Every hidden icon is back in the bar while no restriction is held,
+    /// so the gap is kept to the lift settling (30 ms), the press, and the
+    /// re-assert; nothing else happens in between.
+    private func openNotificationCenter(pressing clock: SystemClock.Item) {
         guard isCollapsed else { return }
         generation += 1
         assertion?.invalidate()
@@ -153,8 +159,7 @@ final class MenuBarHiderController: NSObject {
         // Pressed off the main thread once macOS has applied the lift, as
         // the accessibility call can block for a moment.
         DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.03) {
-            let clocks = SystemClock.items()
-            (clocks.first { $0.frame.contains(location) } ?? clocks.first)?.press()
+            clock.press()
             DispatchQueue.main.async { [weak self] in self?.collapse(revealing: revealed) }
         }
     }
