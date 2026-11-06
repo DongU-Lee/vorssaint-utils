@@ -349,7 +349,8 @@ final class MenuBarExtra: NSObject {
         }
         hiderLog.notice("\(right ? "right" : "left", privacy: .public) click on \(self.label, privacy: .public) sent")
         // Back as soon as the app answers with a new window (its menu or
-        // panel), or after `menuBarTrayPointerReturnDelay` (0.4 s) at most.
+        // panel), checked every 10 ms, or after `menuBarTrayPointerReturnDelay`
+        // (0.4 s) at most. Most of the wait is the app's own reaction.
         let limit = UserDefaults.standard.object(forKey: "menuBarTrayPointerReturnDelay") as? Double ?? 0.4
         let started = Date()
         let label = self.label
@@ -372,14 +373,14 @@ final class MenuBarExtra: NSObject {
             let elapsed = Date().timeIntervalSince(started)
             if !Self.windowNumbers(of: pid).subtracting(windowsBefore).isEmpty {
                 // A moment for the app to finish reading where the click was.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { returnPointer(answered: true) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { returnPointer(answered: true) }
             } else if elapsed >= max(limit, 0.05) {
                 returnPointer(answered: false)
             } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: poll)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: poll)
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: poll)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: poll)
     }
 
     /// The on-screen windows a process owns, menus and panels included.
