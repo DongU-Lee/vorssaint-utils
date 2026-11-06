@@ -337,6 +337,8 @@ final class MenuBarExtra: NSObject {
         let point = CGPoint(x: frame.midX, y: frame.midY)
         let types: [CGEventType] = right ? [.rightMouseDown, .rightMouseUp] : [.leftMouseDown, .leftMouseUp]
         let pointer = CGEvent(source: nil)?.location
+        // The trip to the icon is hidden, so the pointer seems to stay put.
+        let hidden = PointerVisibility.hide()
         for type in types {
             guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point,
                                       mouseButton: right ? .right : .left) else { continue }
@@ -346,8 +348,9 @@ final class MenuBarExtra: NSObject {
         }
         hiderLog.notice("\(right ? "right" : "left", privacy: .public) click on \(self.label, privacy: .public) sent")
         let delay = UserDefaults.standard.object(forKey: "menuBarTrayPointerReturnDelay") as? Double ?? 0.4
-        if let pointer, delay > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { CGWarpMouseCursorPosition(pointer) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, 0.05)) {
+            if let pointer, delay > 0 { CGWarpMouseCursorPosition(pointer) }
+            if hidden { PointerVisibility.show() }
         }
     }
 
@@ -627,6 +630,38 @@ private struct ClickCatcher: NSViewRepresentable {
     func updateNSView(_ view: CatcherView, context: Context) {
         view.onLeft = onLeft
         view.onRight = onRight
+    }
+}
+
+// MARK: - Hiding the pointer from the background
+
+/// macOS only lets the active app hide the pointer; the tray never becomes
+/// active, so it first sets the private "SetsCursorInBackground" connection
+/// property (resolved at runtime; without it nothing is hidden). Every hide
+/// is paired with a show, and `menuBarTrayHidePointer -bool NO` turns it off.
+enum PointerVisibility {
+    private typealias ConnectionFn = @convention(c) () -> Int32
+    private typealias SetPropertyFn = @convention(c) (Int32, Int32, CFString, CFTypeRef) -> Int32
+
+    private static let allowed: Bool = {
+        guard UserDefaults.standard.object(forKey: "menuBarTrayHidePointer") as? Bool ?? true,
+              let skyLight = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW),
+              let connectionSym = dlsym(skyLight, "SLSMainConnectionID") ?? dlsym(skyLight, "_CGSDefaultConnection"),
+              let setSym = dlsym(skyLight, "SLSSetConnectionProperty") ?? dlsym(skyLight, "CGSSetConnectionProperty")
+        else { return false }
+        let connection = unsafeBitCast(connectionSym, to: ConnectionFn.self)()
+        let set = unsafeBitCast(setSym, to: SetPropertyFn.self)
+        return set(connection, connection, "SetsCursorInBackground" as CFString, kCFBooleanTrue) == 0
+    }()
+
+    /// Hides the pointer; true when it was hidden and must be shown again.
+    static func hide() -> Bool {
+        guard allowed else { return false }
+        return CGDisplayHideCursor(CGMainDisplayID()) == .success
+    }
+
+    static func show() {
+        CGDisplayShowCursor(CGMainDisplayID())
     }
 }
 
