@@ -21,9 +21,11 @@ extension MenuBarRenderer {
     }()
 
     // Geometry in points for the 22 pt (readable) item; dense scales it.
-    private static let ringRadius: CGFloat = 11.5
+    // The arc's radius follows from the glyph: centred a point up and right
+    // of the glyph, as large as the item's height allows.
     private static let ringWidth: CGFloat = 2.4
-    private static let glyphSide: CGFloat = 15
+    /// `defaults write <bundle id> menuBarGlyphSize 17` changes it at the next launch.
+    static var glyphSide: CGFloat = CGFloat(UserDefaults.standard.object(forKey: "menuBarGlyphSize") as? Double ?? 17)
     private static let ringStart: CGFloat = -30      // four o'clock, the faint end
     private static let ringEnd: CGFloat = 120        // eleven o'clock
     private static let minimumLevel: CGFloat = 0.045  // a 0% reading still shows a dot
@@ -47,24 +49,29 @@ extension MenuBarRenderer {
         let size: NSSize
         let glyph: NSRect
         let ringCenter: NSPoint
+        let ringRadius: CGFloat
         let scale: CGFloat
     }
 
     private static func layout(style: MenuBarBlockStyle) -> Layout {
         let height: CGFloat = style == .readable ? 22 : 20
         let scale = height / 22
-        let glyph = NSRect(x: 0.5 * scale, y: 0.5 * scale, width: glyphSide * scale, height: glyphSide * scale)
+        let side = min(glyphSide, 19) * scale
+        let glyph = NSRect(x: 0.5 * scale, y: 0.5 * scale, width: side, height: side)
         // Centred a point up and right of the glyph, so the arc clears its
-        // upper-right corner by about a point.
+        // upper-right corner; the radius is whatever keeps the arc's top
+        // inside the item.
         let ringCenter = NSPoint(x: glyph.midX + scale, y: glyph.midY + scale)
-        let width = ceil(ringCenter.x + (ringRadius + ringWidth / 2) * scale + 0.5)
-        return Layout(size: NSSize(width: width, height: height), glyph: glyph, ringCenter: ringCenter, scale: scale)
+        let ringRadius = height - 0.2 * scale - ringWidth * scale / 2 - ringCenter.y
+        let width = ceil(ringCenter.x + ringRadius + ringWidth * scale / 2 + 0.5)
+        return Layout(size: NSSize(width: width, height: height), glyph: glyph, ringCenter: ringCenter,
+                      ringRadius: ringRadius, scale: scale)
     }
 
     /// Usage arcs move in 2% steps, so a jittery reading reuses images.
     static func cachedRingImage(label: String, fraction: Double?, style: MenuBarBlockStyle) -> NSImage {
         let step = fraction.map { Int((MenuBarUsageBarSupport.clampedFraction($0) * 50).rounded()) }
-        let key = "ring|\(MenuBarMetricGlyphs.set.rawValue)|\(gaugeStyle.rawValue)|\(coloredGauges)|\(label)|\(step.map(String.init) ?? "-")|\(style)" as NSString
+        let key = "ring|\(glyphSide)|\(MenuBarMetricGlyphs.set.rawValue)|\(gaugeStyle.rawValue)|\(coloredGauges)|\(label)|\(step.map(String.init) ?? "-")|\(style)" as NSString
         if let cached = ringCache.object(forKey: key) { return cached }
         let image = ringImage(label: label, fraction: step.map { Double($0) / 50 }, style: style)
         ringCache.setObject(image, forKey: key)
@@ -74,7 +81,7 @@ extension MenuBarRenderer {
     static func cachedRingBatteryImage(percent: Int, isCharging: Bool, isLow: Bool,
                                        style: MenuBarBlockStyle) -> NSImage {
         let percent = max(0, min(100, percent))
-        let key = "ringBattery|\(gaugeStyle.rawValue)|\(coloredGauges)|\(percent)|\(isCharging)|\(isLow)|\(style)" as NSString
+        let key = "ringBattery|\(glyphSide)|\(gaugeStyle.rawValue)|\(coloredGauges)|\(percent)|\(isCharging)|\(isLow)|\(style)" as NSString
         if let cached = ringCache.object(forKey: key) { return cached }
         let image = ringBatteryImage(percent: percent, isCharging: isCharging, isLow: isLow, style: style)
         ringCache.setObject(image, forKey: key)
@@ -113,7 +120,9 @@ extension MenuBarRenderer {
 
         let image = NSImage(size: layout.size, flipped: false) { _ in
             drawRing(layout, level: CGFloat(percent) / 100, color: ringColor, style: gauge)
-            var font = NSFont.monospacedDigitSystemFont(ofSize: (percent >= 100 ? 8.5 : 10) * layout.scale, weight: .heavy)
+            // The number grows with the glyph it stands in for.
+            let digits = layout.glyph.height * (percent >= 100 ? 0.58 : 0.68)
+            var font = NSFont.monospacedDigitSystemFont(ofSize: digits, weight: .heavy)
             if let rounded = font.fontDescriptor.withDesign(.rounded) {
                 font = NSFont(descriptor: rounded, size: font.pointSize) ?? font
             }
@@ -143,7 +152,7 @@ extension MenuBarRenderer {
         let faint: CGFloat = isDark ? 0.28 : 0.22
         let level = level.map { max(minimumLevel, $0) }
         let center = layout.ringCenter
-        let radius = ringRadius * layout.scale
+        let radius = layout.ringRadius
         let width = ringWidth * layout.scale
         func angle(_ t: CGFloat) -> CGFloat { ringStart + (ringEnd - ringStart) * t }
         func arc(_ from: CGFloat, _ to: CGFloat, _ stroke: NSColor, round: Bool) {
