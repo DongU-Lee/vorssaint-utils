@@ -125,6 +125,7 @@ final class MenuBarHiderController: NSObject {
         tray.show(HiddenAppsTray(
             state: trayState(),
             onOpen: { [weak self] extra in close(); self?.open(extra) },
+            onRightClick: { [weak self] extra in close(); self?.open(extra, rightClick: true) },
             onShowAll: { [weak self] in close(); self?.expand() },
             onHideOthers: { [weak self] in close(); self?.collapse() },
             onRequestAccess: { close(); Permissions.shared.requestAccessibility() }),
@@ -138,21 +139,25 @@ final class MenuBarHiderController: NSObject {
         return .collapsed(MenuBarExtra.hiddenCandidates(excludingBundleID: ownBundleID))
     }
 
-    /// Brings the picked app's icons back for a moment, opens the one that was
-    /// picked, and hides them again after the next click anywhere.
-    private func open(_ extra: MenuBarExtra) {
+    /// Brings the picked app's icons back for a moment, clicks the one that
+    /// was picked (with the right button when asked, so the app shows the
+    /// same menu it would in the bar), and hides them again after the next
+    /// click anywhere.
+    private func open(_ extra: MenuBarExtra, rightClick: Bool = false) {
         guard let bundleID = extra.bundleID else {
             // macOS cannot allow-list an app without a bundle id, so it stays
             // hidden; pressing it is all that is left to try.
-            extra.press()
+            extra.activate(rightClick: rightClick)
             return
         }
         collapse(revealing: bundleID) { [weak self] in
             // The bar needs a moment to place the revealed icon before it can
             // anchor the app's menu.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                MenuBarExtra.refreshed(extra)?.press()
-                self?.startRehideMonitor()
+                MenuBarExtra.refreshed(extra)?.activate(rightClick: rightClick)
+                // Installed after the click we just posted has passed, so the
+                // monitor does not mistake our own right click for the next one.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self?.startRehideMonitor() }
             }
         }
     }
@@ -186,6 +191,8 @@ final class MenuBarExtra: NSObject {
     let appIcon: NSImage?
     /// How many icons this app has in the bar; the tray numbers them.
     let siblingCount: Int
+    /// Where the icon sits on screen (top-left origin), when known.
+    let frame: CGRect?
     private let element: AXUIElement
 
     private init(app: NSRunningApplication, index: Int, count: Int, element: AXUIElement) {
@@ -206,10 +213,40 @@ final class MenuBarExtra: NSObject {
         }
         appIcon = app.icon
         siblingCount = count
+        frame = Self.frame(of: element)
     }
 
     func press() {
         AXUIElementPerformAction(element, kAXPressAction as CFString)
+    }
+
+    /// A left click is the accessibility press. A right click has no such
+    /// action, so it is posted as real mouse events at the icon's centre,
+    /// which the app answers exactly as it would in the bar.
+    func activate(rightClick: Bool) {
+        guard rightClick, let frame else { return press() }
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+        for type in [CGEventType.rightMouseDown, .rightMouseUp] {
+            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .right)?
+                .post(tap: .cghidEventTap)
+        }
+    }
+
+    private static func frame(of element: AXUIElement) -> CGRect? {
+        var positionValue: AnyObject?
+        var sizeValue: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success,
+              let positionValue, let sizeValue,
+              CFGetTypeID(positionValue) == AXValueGetTypeID(), CFGetTypeID(sizeValue) == AXValueGetTypeID()
+        else { return nil }
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        // swiftlint:disable force_cast
+        AXValueGetValue(positionValue as! AXValue, .cgPoint, &origin)
+        AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+        // swiftlint:enable force_cast
+        return CGRect(origin: origin, size: size)
     }
 
     /// Every other app's menu bar icon. macOS's own items are left out: they
@@ -341,6 +378,7 @@ struct HiddenAppsTray: View {
 
     let state: State
     let onOpen: (MenuBarExtra) -> Void
+    let onRightClick: (MenuBarExtra) -> Void
     let onShowAll: () -> Void
     let onHideOthers: () -> Void
     let onRequestAccess: () -> Void
@@ -364,7 +402,9 @@ struct HiddenAppsTray: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(extras.indices, id: \.self) { index in
-                            TrayTile(extra: extras[index]) { onOpen(extras[index]) }
+                            TrayTile(extra: extras[index],
+                                     action: { onOpen(extras[index]) },
+                                     rightAction: { onRightClick(extras[index]) })
                         }
                     }
                 }
@@ -390,36 +430,58 @@ struct HiddenAppsTray: View {
 private struct TrayTile: View {
     let extra: MenuBarExtra
     let action: () -> Void
+    let rightAction: () -> Void
     @SwiftUI.State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            ZStack(alignment: .bottomTrailing) {
-                Group {
-                    if let icon = extra.appIcon {
-                        Image(nsImage: icon).resizable().interpolation(.high)
-                    } else {
-                        Image(systemName: "app.dashed").resizable().foregroundStyle(.secondary)
-                    }
-                }
-                .frame(width: 34, height: 34)
-                .frame(width: 48, height: 48)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.primary.opacity(hovering ? 0.12 : 0.05)))
-                if extra.siblingCount > 1 {
-                    Text("\(extra.index + 1)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 15, height: 15)
-                        .background(Circle().fill(Color.secondary))
-                        .offset(x: 2, y: 2)
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let icon = extra.appIcon {
+                    Image(nsImage: icon).resizable().interpolation(.high)
+                } else {
+                    Image(systemName: "app.dashed").resizable().foregroundStyle(.secondary)
                 }
             }
+            .frame(width: 34, height: 34)
+            .frame(width: 48, height: 48)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(hovering ? 0.12 : 0.05)))
+            if extra.siblingCount > 1 {
+                Text("\(extra.index + 1)")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 15, height: 15)
+                    .background(Circle().fill(Color.secondary))
+                    .offset(x: 2, y: 2)
+            }
         }
-        .buttonStyle(.plain)
+        // SwiftUI buttons only take the left button; this takes both.
+        .overlay(ClickCatcher(onLeft: action, onRight: rightAction))
         .onHover { hovering = $0 }
         .help(extra.label)
         .accessibilityLabel(extra.label)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// A transparent view that reports left and right clicks separately.
+private struct ClickCatcher: NSViewRepresentable {
+    let onLeft: () -> Void
+    let onRight: () -> Void
+
+    final class CatcherView: NSView {
+        var onLeft: () -> Void = {}
+        var onRight: () -> Void = {}
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseUp(with event: NSEvent) { if bounds.contains(convert(event.locationInWindow, from: nil)) { onLeft() } }
+        override func rightMouseUp(with event: NSEvent) { if bounds.contains(convert(event.locationInWindow, from: nil)) { onRight() } }
+    }
+
+    func makeNSView(context: Context) -> CatcherView { CatcherView() }
+
+    func updateNSView(_ view: CatcherView, context: Context) {
+        view.onLeft = onLeft
+        view.onRight = onRight
     }
 }
 
