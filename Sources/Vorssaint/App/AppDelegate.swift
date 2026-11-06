@@ -122,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
         statusController = StatusItemController()
         if #available(macOS 27, *) { menuBarHider = MenuBarHiderController() }
+        menuBarHider?.onRightClick = { [weak self] button in self?.showContextMenu(from: button) }
         statusController.onLeftClick = { [weak self] in
             self?.captureStatusClick()
             self?.toggleMainPopover()

@@ -23,11 +23,23 @@ extension MenuBarRenderer {
     private static let gaugeWidth: CGFloat = 2
     private static let gaugeGap: CGFloat = 1.5           // glyph edge to the arc's inner side
     private static let gaugeMinimumDegrees: CGFloat = 8  // a 0% reading still shows a dot
+    private static let gaugeThinWidth: CGFloat = 0.6
+
+    /// How the arc shows its value.
+    /// - track: a faint full-length track with the level drawn over it.
+    /// - taper / fade / taperFade: one stroke; past the level it thins, fades, or both.
+    /// - comet: one stroke that thins along its length and ends at the level.
+    enum GaugeStyle: String { case track, taper, fade, taperFade, comet }
+
+    /// `defaults write <bundle id> menuBarGaugeStyle taperFade` switches it at
+    /// the next launch.
+    static var gaugeStyle: GaugeStyle = GaugeStyle(
+        rawValue: UserDefaults.standard.string(forKey: "menuBarGaugeStyle") ?? "") ?? .track
 
     /// Usage gauges move in 2% steps, so a jittery reading reuses images.
     static func cachedRingImage(label: String, fraction: Double?, style: MenuBarBlockStyle) -> NSImage {
         let step = fraction.map { Int((MenuBarUsageBarSupport.clampedFraction($0) * 50).rounded()) }
-        let key = "ring|\(label)|\(step.map(String.init) ?? "-")|\(style)" as NSString
+        let key = "ring|\(MenuBarMetricGlyphs.set.rawValue)|\(gaugeStyle.rawValue)|\(label)|\(step.map(String.init) ?? "-")|\(style)" as NSString
         if let cached = ringCache.object(forKey: key) { return cached }
         let image = ringImage(label: label, fraction: step.map { Double($0) / 50 }, style: style)
         ringCache.setObject(image, forKey: key)
@@ -52,10 +64,14 @@ extension MenuBarRenderer {
         let innerReach = gaugeRadius * cos(gaugeSweep * .pi / 180) - gaugeWidth / 2
         let center = NSPoint(x: glyphRect.maxX + gaugeGap - innerReach, y: height / 2)
         let width = ceil(center.x + gaugeRadius + gaugeWidth / 2 + 0.5)
+        // The handler runs at draw time; the set and style are fixed now so
+        // the image matches the key it was cached under.
+        let set = MenuBarMetricGlyphs.set
+        let gauge = gaugeStyle
 
         let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
-            drawGauge(center: center, fraction: fraction)
-            if let glyph = MenuBarMetricGlyphs.image(for: label) {
+            drawGauge(center: center, fraction: fraction, style: gauge)
+            if let glyph = MenuBarMetricGlyphs.image(for: label, set: set) {
                 tinted(glyph, size: glyphRect.size).draw(in: glyphRect)
             }
             return true
@@ -65,27 +81,78 @@ extension MenuBarRenderer {
         return image
     }
 
-    /// A faint track and the level filling it from the bottom up; orange from
-    /// 85%, red from 95%.
-    private static func drawGauge(center: NSPoint, fraction: Double?) {
+    /// The gauge filling from the bottom up in the current `gaugeStyle`;
+    /// orange from 85%, red from 95%. A missing reading draws the empty track.
+    private static func drawGauge(center: NSPoint, fraction: Double?, style gaugeStyle: GaugeStyle) {
         let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let track = NSBezierPath()
-        track.appendArc(withCenter: center, radius: gaugeRadius, startAngle: -gaugeSweep, endAngle: gaugeSweep)
-        track.lineWidth = gaugeWidth
-        track.lineCapStyle = .round
-        NSColor.labelColor.withAlphaComponent(isDark ? 0.30 : 0.22).setStroke()
-        track.stroke()
+        let trackAlpha: CGFloat = isDark ? 0.30 : 0.22
+        let value = fraction.map { CGFloat(MenuBarUsageBarSupport.clampedFraction($0)) }
+        // Where the level ends, as a fraction of the arc; never below the dot.
+        let level = value.map { max(gaugeMinimumDegrees / (2 * gaugeSweep), $0) }
+        let levelColor: NSColor = {
+            guard let value else { return .labelColor }
+            return value >= 0.95 ? .systemRed : value >= 0.85 ? .systemOrange : .labelColor
+        }()
+        func angle(_ t: CGFloat) -> CGFloat { -gaugeSweep + 2 * gaugeSweep * t }
 
-        guard let fraction else { return }
-        let value = MenuBarUsageBarSupport.clampedFraction(fraction)
-        let degrees = max(gaugeMinimumDegrees, 2 * gaugeSweep * CGFloat(value))
-        let level = NSBezierPath()
-        level.appendArc(withCenter: center, radius: gaugeRadius, startAngle: -gaugeSweep,
-                        endAngle: -gaugeSweep + degrees)
-        level.lineWidth = gaugeWidth
-        level.lineCapStyle = .round
-        (value >= 0.95 ? NSColor.systemRed : value >= 0.85 ? NSColor.systemOrange : NSColor.labelColor).setStroke()
-        level.stroke()
+        if gaugeStyle == .track {
+            let track = NSBezierPath()
+            track.appendArc(withCenter: center, radius: gaugeRadius, startAngle: angle(0), endAngle: angle(1))
+            track.lineWidth = gaugeWidth
+            track.lineCapStyle = .round
+            NSColor.labelColor.withAlphaComponent(trackAlpha).setStroke()
+            track.stroke()
+            guard let level else { return }
+            let arc = NSBezierPath()
+            arc.appendArc(withCenter: center, radius: gaugeRadius, startAngle: angle(0), endAngle: angle(level))
+            arc.lineWidth = gaugeWidth
+            arc.lineCapStyle = .round
+            levelColor.setStroke()
+            arc.stroke()
+            return
+        }
+
+        // One stroke drawn as short butt-capped pieces, each at its own width
+        // and opacity, with a round dot closing each end.
+        let pieces = 48
+        func shape(at t: CGFloat) -> (width: CGFloat, alpha: CGFloat, color: NSColor)? {
+            guard let level else { return (gaugeThinWidth, trackAlpha, .labelColor) }
+            switch gaugeStyle {
+            case .comet:
+                guard t <= level else { return nil }
+                return (gaugeWidth - (gaugeWidth - gaugeThinWidth) * t / level, 1, levelColor)
+            case .taper, .fade, .taperFade:
+                guard t > level else { return (gaugeWidth, 1, levelColor) }
+                let u = (t - level) / max(1 - level, 0.001)
+                let width = gaugeStyle == .fade ? gaugeWidth : gaugeWidth - (gaugeWidth - gaugeThinWidth) * u
+                let alpha = gaugeStyle == .taper ? 1 : 1 - (1 - trackAlpha) * u
+                return (width, alpha, .labelColor)
+            case .track:
+                return nil
+            }
+        }
+        var tip: (t: CGFloat, width: CGFloat, alpha: CGFloat, color: NSColor)?
+        for i in 0..<pieces {
+            let t0 = CGFloat(i) / CGFloat(pieces), t1 = CGFloat(i + 1) / CGFloat(pieces)
+            guard let s = shape(at: (t0 + t1) / 2) else { break }
+            let piece = NSBezierPath()
+            // A hair of overlap hides seams between pieces.
+            piece.appendArc(withCenter: center, radius: gaugeRadius, startAngle: angle(t0) - 0.15, endAngle: angle(t1) + 0.15)
+            piece.lineWidth = s.width
+            piece.lineCapStyle = .butt
+            s.color.withAlphaComponent(s.alpha).setStroke()
+            piece.stroke()
+            tip = (t1, s.width, s.alpha, s.color)
+        }
+        func dot(at t: CGFloat, width: CGFloat, alpha: CGFloat, color: NSColor) {
+            let radians = angle(t) * .pi / 180
+            let point = NSPoint(x: center.x + gaugeRadius * cos(radians), y: center.y + gaugeRadius * sin(radians))
+            color.withAlphaComponent(alpha).setFill()
+            NSBezierPath(ovalIn: NSRect(x: point.x - width / 2, y: point.y - width / 2, width: width, height: width)).fill()
+        }
+        if let start = shape(at: 0) { dot(at: 0, width: start.width, alpha: start.alpha, color: start.color) }
+        // A translucent tip ends cleanly on its own; an opaque one needs the cap.
+        if let tip, tip.alpha >= 0.999 { dot(at: tip.t, width: tip.width, alpha: tip.alpha, color: tip.color) }
     }
 
     /// A battery outline with the percentage inside, the terminal at half

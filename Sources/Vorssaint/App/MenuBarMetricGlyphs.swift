@@ -4,36 +4,57 @@
 import AppKit
 
 /// Menu bar glyphs for the "Icons" appearance and the hidden-apps tray, one
-/// family so the tray, CPU, GPU, RAM and disk read alike.
+/// family so the tray, CPU, GPU, RAM and disk read alike. Two families are
+/// built in, switched by the `menuBarGlyphSet` default for comparison:
 ///
-/// The shapes are MingCute icons (https://github.com/Richard9394/MingCute,
-/// Apache License 2.0, Copyright (c) Richard9394), unmodified SVG. Each glyph
-/// is drawn two-tone: the filled variant at a low opacity under the line
-/// variant, which gives the shapes body at menu bar size without a second
-/// color. The result is a template image, so macOS tints it for light and
-/// dark menu bars like its own items.
+/// - `mingcute`: MingCute icons (https://github.com/Richard9394/MingCute,
+///   Apache License 2.0, Copyright (c) Richard9394), unmodified SVG, drawn
+///   two-tone: the filled variant at a low opacity under the line variant.
+/// - `custom`: Vorssaint's own set as filled silhouettes with the detail cut
+///   out of them, the weight of macOS's own menu bar icons (Wi-Fi, battery,
+///   Control Center are all solid): a chip with a ring around its die and
+///   two pins a side, a card with its fan cut out, a stick with three chips
+///   cut out, a drive with its slot and light, and three tiles plus a dot
+///   for the one tucked away.
+///
+/// Either way the result is a template image, so macOS tints it for light
+/// and dark menu bars like its own items.
 enum MenuBarMetricGlyphs {
+    enum GlyphSet: String { case mingcute, custom }
+
+    /// Which family draws. `defaults write <bundle id> menuBarGlyphSet custom`
+    /// switches it at the next launch.
+    static var set: GlyphSet = GlyphSet(
+        rawValue: UserDefaults.standard.string(forKey: "menuBarGlyphSet") ?? "") ?? .mingcute
+
     private static let cache = NSCache<NSString, NSImage>()
 
     /// Every glyph is drawn in a square of this side.
     static let side: CGFloat = 16
-    /// The opacity of the filled layer under the line.
+    /// The opacity of the filled layer under the line (MingCute set).
     private static let underlayOpacity: CGFloat = 0.18
 
-    /// The two-tone template glyph for a usage label (CPU, GPU, RAM, DSK) or
-    /// for the tray (TRAY, WARN), sized to `side`.
-    static func image(for label: String) -> NSImage? {
-        if let cached = cache.object(forKey: label as NSString) { return cached }
-        let (line, fill) = svgs(for: label)
-        guard let lineImage = NSImage(data: Data(line.utf8)),
-              let fillImage = NSImage(data: Data(fill.utf8)) else { return nil }
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { bounds in
-            fillImage.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: underlayOpacity)
-            lineImage.draw(in: bounds)
-            return true
+    /// The template glyph for a usage label (CPU, GPU, RAM, DSK) or for the
+    /// tray (TRAY, WARN), sized to `side`.
+    static func image(for label: String, set: GlyphSet = MenuBarMetricGlyphs.set) -> NSImage? {
+        let key = "\(set.rawValue)|\(label)" as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+        let bounds = NSRect(x: 0, y: 0, width: side, height: side)
+        let image: NSImage
+        if set == .custom, let svg = customSVG(for: label), let source = NSImage(data: Data(svg.utf8)) {
+            image = NSImage(size: bounds.size, flipped: false) { _ in source.draw(in: bounds); return true }
+        } else {
+            let (line, fill) = svgs(for: label)
+            guard let lineImage = NSImage(data: Data(line.utf8)),
+                  let fillImage = NSImage(data: Data(fill.utf8)) else { return nil }
+            image = NSImage(size: bounds.size, flipped: false) { _ in
+                fillImage.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: underlayOpacity)
+                lineImage.draw(in: bounds)
+                return true
+            }
         }
         image.isTemplate = true
-        cache.setObject(image, forKey: label as NSString)
+        cache.setObject(image, forKey: key)
         return image
     }
 
@@ -45,6 +66,18 @@ enum MenuBarMetricGlyphs {
         case "TRAY": return (grid2Line, grid2Fill)
         case "WARN": return (warningLine, warningFill)
         default: return (storageLine, storageFill)
+        }
+    }
+
+    /// The custom set; WARN has no custom shape and falls back to MingCute.
+    private static func customSVG(for label: String) -> String? {
+        switch label {
+        case "CPU": return customChip
+        case "GPU": return customCard
+        case "RAM": return customStick
+        case "DSK": return customDrive
+        case "TRAY": return customGrid
+        default: return nil
         }
     }
 
@@ -94,5 +127,25 @@ enum MenuBarMetricGlyphs {
 
     private static let warningFill = """
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12.746 2.027a10 10 0 0 1 4.699 1.584c5.563 3.618 6.124 11.579 1.116 15.936a10 10 0 0 1-2.998 1.8a10.1 10.1 0 0 1-4.309.626a10 10 0 0 1-4.699-1.584C.992 16.771.431 8.81 5.439 4.453a10 10 0 0 1 2.998-1.8a10.1 10.1 0 0 1 4.309-.626M12 15c-1.432.163-1.225 2.001.002 2c1.049-.001 1.382-1.438.44-1.898c-.111-.055-.317-.116-.442-.102m-.229-8.974c-.466.109-.745.514-.771.974v6c.031.544.431 1 1 1s.969-.456 1-1V7c-.036-.63-.584-1.124-1.229-.974"/></svg>
+    """
+
+    private static let customChip = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M8,5h8a3,3 0 0 1 3,3v8a3,3 0 0 1 -3,3h-8a3,3 0 0 1 -3,-3v-8a3,3 0 0 1 3,-3zM10.200000000000001,8.8h3.6000000000000005a1.4,1.4 0 0 1 1.4,1.4v3.6000000000000005a1.4,1.4 0 0 1 -1.4,1.4h-3.6000000000000005a1.4,1.4 0 0 1 -1.4,-1.4v-3.6000000000000005a1.4,1.4 0 0 1 1.4,-1.4z"/><path d="M11.2,10.6h1.5999999999999999a0.6,0.6 0 0 1 0.6,0.6v1.5999999999999999a0.6,0.6 0 0 1 -0.6,0.6h-1.5999999999999999a0.6,0.6 0 0 1 -0.6,-0.6v-1.5999999999999999a0.6,0.6 0 0 1 0.6,-0.6zM8.4,2.2h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM15.600000000000001,2.2h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM8.4,18.8h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM15.600000000000001,18.8h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM3.0,7.6h1.4a0.8,0.8 0 0 1 0.8,0.8v0.0a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-0.0a0.8,0.8 0 0 1 0.8,-0.8zM3.0,14.8h1.4a0.8,0.8 0 0 1 0.8,0.8v0.0a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-0.0a0.8,0.8 0 0 1 0.8,-0.8zM19.6,7.6h1.4a0.8,0.8 0 0 1 0.8,0.8v0.0a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-0.0a0.8,0.8 0 0 1 0.8,-0.8zM19.6,14.8h1.4a0.8,0.8 0 0 1 0.8,0.8v0.0a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-0.0a0.8,0.8 0 0 1 0.8,-0.8z"/></svg>
+    """
+
+    private static let customCard = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M7,6h12a3,3 0 0 1 3,3v5a3,3 0 0 1 -3,3h-12a3,3 0 0 1 -3,-3v-5a3,3 0 0 1 3,-3zM11.6,11.5a3.4,3.4 0 1 0 6.8,0a3.4,3.4 0 1 0 -6.8,0z"/><path d="M13.8,11.5a1.2,1.2 0 1 0 2.4,0a1.2,1.2 0 1 0 -2.4,0zM2.45,3.5h0.0a0.85,0.85 0 0 1 0.85,0.85v15.3a0.85,0.85 0 0 1 -0.85,0.85h-0.0a0.85,0.85 0 0 1 -0.85,-0.85v-15.3a0.85,0.85 0 0 1 0.85,-0.85zM7.9,16h3.2a0.9,0.9 0 0 1 0.9,0.9v2.2a0.9,0.9 0 0 1 -0.9,0.9h-3.2a0.9,0.9 0 0 1 -0.9,-0.9v-2.2a0.9,0.9 0 0 1 0.9,-0.9z"/></svg>
+    """
+
+    private static let customStick = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M4.4,6.5h15.2a2.4,2.4 0 0 1 2.4,2.4v4.2a2.4,2.4 0 0 1 -2.4,2.4h-15.2a2.4,2.4 0 0 1 -2.4,-2.4v-4.2a2.4,2.4 0 0 1 2.4,-2.4zM6.3,9h1.4a0.8,0.8 0 0 1 0.8,0.8v2.4a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-2.4a0.8,0.8 0 0 1 0.8,-0.8zM11.3,9h1.4a0.8,0.8 0 0 1 0.8,0.8v2.4a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-2.4a0.8,0.8 0 0 1 0.8,-0.8zM16.3,9h1.4a0.8,0.8 0 0 1 0.8,0.8v2.4a0.8,0.8 0 0 1 -0.8,0.8h-1.4a0.8,0.8 0 0 1 -0.8,-0.8v-2.4a0.8,0.8 0 0 1 0.8,-0.8z"/><path d="M5.5,15h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM9.700000000000001,15h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM13.9,15h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8zM18.1,15h0.0a0.8,0.8 0 0 1 0.8,0.8v1.4a0.8,0.8 0 0 1 -0.8,0.8h-0.0a0.8,0.8 0 0 1 -0.8,-0.8v-1.4a0.8,0.8 0 0 1 0.8,-0.8z"/></svg>
+    """
+
+    private static let customDrive = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M5,7h14a3,3 0 0 1 3,3v4a3,3 0 0 1 -3,3h-14a3,3 0 0 1 -3,-3v-4a3,3 0 0 1 3,-3zM5.7,10.3h6.6a0.7,0.7 0 0 1 0.7,0.7v0.0a0.7,0.7 0 0 1 -0.7,0.7h-6.6a0.7,0.7 0 0 1 -0.7,-0.7v-0.0a0.7,0.7 0 0 1 0.7,-0.7zM16.1,12a1.4,1.4 0 1 0 2.8,0a1.4,1.4 0 1 0 -2.8,0z"/></svg>
+    """
+
+    private static let customGrid = """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M5.4,3h3.2a2.4,2.4 0 0 1 2.4,2.4v3.2a2.4,2.4 0 0 1 -2.4,2.4h-3.2a2.4,2.4 0 0 1 -2.4,-2.4v-3.2a2.4,2.4 0 0 1 2.4,-2.4zM15.4,3h3.2a2.4,2.4 0 0 1 2.4,2.4v3.2a2.4,2.4 0 0 1 -2.4,2.4h-3.2a2.4,2.4 0 0 1 -2.4,-2.4v-3.2a2.4,2.4 0 0 1 2.4,-2.4zM5.4,13h3.2a2.4,2.4 0 0 1 2.4,2.4v3.2a2.4,2.4 0 0 1 -2.4,2.4h-3.2a2.4,2.4 0 0 1 -2.4,-2.4v-3.2a2.4,2.4 0 0 1 2.4,-2.4zM16.3,15h1.4a1.3,1.3 0 0 1 1.3,1.3v1.4a1.3,1.3 0 0 1 -1.3,1.3h-1.4a1.3,1.3 0 0 1 -1.3,-1.3v-1.4a1.3,1.3 0 0 1 1.3,-1.3z"/></svg>
     """
 }

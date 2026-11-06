@@ -27,13 +27,17 @@ final class MenuBarHiderController: NSObject {
     private var rehideMonitor: Any?
     /// Bumped on every state change so a late activation cannot win.
     private var generation = 0
+    /// A right click, which opens the app's context menu like every other
+    /// Vorssaint item; receives the button so the menu can anchor to it.
+    var onRightClick: ((NSStatusBarButton?) -> Void)?
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
         statusItem.autosaveName = "VorssaintMenuBarHider"
         statusItem.button?.target = self
-        statusItem.button?.action = #selector(togglePopover)
+        statusItem.button?.action = #selector(clicked)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         updateIcon()
         collapse()
     }
@@ -105,7 +109,16 @@ final class MenuBarHiderController: NSObject {
 
     // MARK: - Tray
 
-    @objc private func togglePopover() {
+    @objc private func clicked() {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            tray.close()
+            onRightClick?(statusItem.button)
+            return
+        }
+        togglePopover()
+    }
+
+    private func togglePopover() {
         if tray.isVisible { return tray.close() }
         guard let buttonFrame = statusItem.button?.window?.frame else { return }
         let close: () -> Void = { [weak self] in self?.tray.close() }
