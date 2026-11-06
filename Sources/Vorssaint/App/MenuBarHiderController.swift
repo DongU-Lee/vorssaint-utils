@@ -646,9 +646,19 @@ enum NativeMenuBarVisibility {
     private static let frameworkPath = "/System/Library/PrivateFrameworks/MenuBarClientCore.framework/MenuBarClientCore"
     private static let initSelector = sel_registerName("initWithAllowedSystemItems:allowedBundleIdentifiers:")
     private static let activateSelector = sel_registerName("activateWithConfiguration:completionHandler:")
+    /// The system clock's item id, found on macOS 27.0.1 by leaving out one
+    /// id at a time; undocumented, so a later macOS may move it.
+    static let systemClockItem = 2
+
     /// System item ids to keep. Unknown ids are ignored, so the range covers
-    /// items a given Mac does not have.
-    private static let systemItemsToKeep = (0..<64).map { NSNumber(value: $0) }
+    /// items a given Mac does not have. The clock is left out unless
+    /// `menuBarHideSystemClock -bool NO`: Vorssaint shows its own date and
+    /// time, and the system clock is useless while folded anyway, since
+    /// macOS ignores clicks on it under any restriction.
+    private static var systemItemsToKeep: [NSNumber] {
+        let hideClock = UserDefaults.standard.object(forKey: "menuBarHideSystemClock") as? Bool ?? true
+        return (0..<64).filter { !(hideClock && $0 == systemClockItem) }.map { NSNumber(value: $0) }
+    }
 
     private typealias AllocFn = @convention(c) (AnyClass, Selector) -> UnsafeMutableRawPointer?
     private typealias InitFn = @convention(c) (UnsafeMutableRawPointer, Selector, NSArray, NSArray) -> UnsafeMutableRawPointer?
