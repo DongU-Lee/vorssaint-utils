@@ -122,10 +122,9 @@ extension MenuBarRenderer {
     static var batteryFullStyle: BatteryFullStyle = BatteryFullStyle(
         rawValue: UserDefaults.standard.string(forKey: "menuBarBatteryFull") ?? "") ?? .checkPlug
 
-    /// The percentage where a glyph would be, sized to the glyph and always
-    /// about two digits wide: one digit carries a small %, a full battery
-    /// reads per `batteryFullStyle`. A bolt beside it while charging, red arc
-    /// and number when low.
+    /// The percentage where a glyph would be, sized to the glyph; a full
+    /// battery reads per `batteryFullStyle` so it never needs three digits.
+    /// A bolt beside it while charging, red arc and number when low.
     static func ringBatteryImage(percent: Int, isCharging: Bool, isLow: Bool, style: MenuBarBlockStyle) -> NSImage {
         let layout = layout(style: style)
         let gauge = gaugeStyle
@@ -172,14 +171,8 @@ extension MenuBarRenderer {
                     drawSymbol(isCharging ? "powerplug.fill" : "checkmark", pointSize: box.height * (isCharging ? 0.56 : 0.6))
                 }
             } else {
-                let text = NSMutableAttributedString(string: "\(percent)", attributes: [
-                    .font: face(digitSize), .kern: -0.3, .foregroundColor: ink])
-                if percent < 10 {
-                    text.append(NSAttributedString(string: "%", attributes: [
-                        .font: face(digitSize * 0.62), .baselineOffset: 0.4 * layout.scale,
-                        .foregroundColor: ink.withAlphaComponent(0.7)]))
-                }
-                drawCentered(text)
+                drawCentered(NSAttributedString(string: "\(percent)", attributes: [
+                    .font: face(digitSize), .kern: -0.3, .foregroundColor: ink]))
             }
             // A plug already says "on power"; anything else gets the bolt.
             if isCharging, !(drewSymbol && full == .checkPlug),
