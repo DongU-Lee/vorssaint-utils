@@ -325,54 +325,30 @@ final class MenuBarExtra: NSObject {
     }
 
     /// A real click at the icon's centre, which the app answers exactly as
-    /// it would in the bar. It goes straight to the app's process, addressed
-    /// to the icon's window, so the pointer never moves; if that window
-    /// cannot be found (or `menuBarTrayClickMode` is `hid`) it is posted as a
-    /// hardware click and the pointer is put back where it was. Without a
-    /// placed frame a right click is still tried there, and a left click
-    /// falls back to the accessibility press.
+    /// it would in the bar. On macOS 27 the whole menu bar is one Window
+    /// Server window and apps own no window for their icon, so a click can
+    /// only arrive through the pointer: it moves to the icon, clicks, and is
+    /// put back once the app has had time to take the click (some, OneDrive
+    /// among them, check the pointer is over their icon as they open).
+    /// Without a placed frame a right click is still tried there, and a left
+    /// click falls back to the accessibility press.
     func click(right: Bool, placed: Bool) {
         guard let frame, placed || right else { return press() }
         let point = CGPoint(x: frame.midX, y: frame.midY)
         let types: [CGEventType] = right ? [.rightMouseDown, .rightMouseUp] : [.leftMouseDown, .leftMouseUp]
-        let direct = UserDefaults.standard.string(forKey: "menuBarTrayClickMode") != "hid"
-        let window = direct ? Self.statusWindow(of: pid, containing: point) : nil
         let pointer = CGEvent(source: nil)?.location
         for type in types {
             guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point,
                                       mouseButton: right ? .right : .left) else { continue }
             event.setIntegerValueField(.eventSourceUserData, value: Self.postedMarker)
             event.setIntegerValueField(.mouseEventClickState, value: 1)
-            if let window {
-                event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window))
-                event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window))
-                event.postToPid(pid)
-            } else {
-                event.post(tap: .cghidEventTap)
-            }
+            event.post(tap: .cghidEventTap)
         }
-        let route = window.map { "to window \($0)" } ?? "as hardware"
-        hiderLog.notice("\(right ? "right" : "left", privacy: .public) click on \(self.label, privacy: .public) sent \(route, privacy: .public)")
-        if window == nil, let pointer {
-            // Back where the person left it once the click has landed.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { CGWarpMouseCursorPosition(pointer) }
+        hiderLog.notice("\(right ? "right" : "left", privacy: .public) click on \(self.label, privacy: .public) sent")
+        let delay = UserDefaults.standard.object(forKey: "menuBarTrayPointerReturnDelay") as? Double ?? 0.4
+        if let pointer, delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { CGWarpMouseCursorPosition(pointer) }
         }
-    }
-
-    /// The app's menu bar window (status window level) holding a point.
-    private static func statusWindow(of pid: pid_t, containing point: CGPoint) -> CGWindowID? {
-        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]
-        else { return nil }
-        let statusLevel = Int(CGWindowLevelForKey(.statusWindow))
-        for window in windows {
-            guard window[kCGWindowOwnerPID as String] as? pid_t == pid,
-                  window[kCGWindowLayer as String] as? Int == statusLevel,
-                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
-                  let frame = CGRect(dictionaryRepresentation: bounds), frame.contains(point),
-                  let number = window[kCGWindowNumber as String] as? CGWindowID else { continue }
-            return number
-        }
-        return nil
     }
 
     /// Tags the clicks posted above, so our own monitors can tell them from
