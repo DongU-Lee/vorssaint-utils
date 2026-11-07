@@ -142,6 +142,19 @@ struct MenuBarMetricsPreview: View {
     @ViewBuilder
     private func segmentView(_ segment: MenuBarSegment, stacked: Bool) -> some View {
         switch segment {
+        case .clock:
+            let (date, time) = MenuBarClock.strings()
+            VStack(spacing: -1.5) {
+                if !date.isEmpty {
+                    Text(date)
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+                Text(time)
+                    .font(.system(size: date.isEmpty ? 12.5 : 11, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+            }
+            .fixedSize()
         case let .text(string):
             Text(string)
                 .font(.system(size: MenuBarRenderer.statusFontSize(stacked: stacked),

@@ -5,7 +5,7 @@ import AppKit
 
 /// A live reading the user can pin next to the menu bar icon.
 enum MenuBarMetric: String, CaseIterable, Identifiable {
-    case cpu, gpu, memory, cpuTemperature, gpuTemperature, batteryTemperature, network, diskUsage, diskActivity, battery, batteryTime, peripheralBattery, power, fanSpeed, connectedDevices
+    case cpu, gpu, memory, cpuTemperature, gpuTemperature, batteryTemperature, network, diskUsage, diskActivity, battery, batteryTime, peripheralBattery, power, fanSpeed, connectedDevices, clock
 
     var id: String { rawValue }
 
@@ -26,6 +26,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         case .power: return DefaultsKey.menuBarPower
         case .connectedDevices: return DefaultsKey.menuBarConnectedDevices
         case .fanSpeed: return DefaultsKey.menuBarFanSpeed
+        case .clock: return DefaultsKey.menuBarClock
         }
     }
 
@@ -46,6 +47,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         case .connectedDevices: return "cable.connector"
         case .power: return "powerplug.fill"
         case .fanSpeed: return "fanblades"
+        case .clock: return "calendar.badge.clock"
         }
     }
 
@@ -66,6 +68,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         case .connectedDevices: return FeatureStrings.connectedDevices(L10n.shared.language).title
         case .power: return strings.monitorShowPowerLabel
         case .fanSpeed: return FeatureStrings.fanControl(L10n.shared.language).menuBarTitle
+        case .clock: return L10n.shared.language.rawValue.hasPrefix("ko") ? "날짜·시간" : "Date & Time"
         }
     }
 
@@ -75,6 +78,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         .memory,
         .battery, .batteryTime, .batteryTemperature, .peripheralBattery,
         .network, .diskUsage, .diskActivity, .connectedDevices, .power, .fanSpeed,
+        .clock,
     ]
 
     static func order(in defaults: UserDefaults) -> [MenuBarMetric] {
@@ -100,7 +104,16 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
         case .connectedDevices: return .connectedDevices
         case .battery, .batteryTime, .batteryTemperature, .peripheralBattery, .power: return .monitorPower
         case .fanSpeed: return .fanControl
+        // Not a monitor reading; `isFeatureAvailable` keeps it independent of
+        // whichever feature this names.
+        case .clock: return .monitorCPU
         }
+    }
+
+    /// Whether the hub has this reading's feature installed. The date and
+    /// time belongs to no feature and is always available.
+    func isFeatureAvailable(in defaults: UserDefaults = .standard) -> Bool {
+        self == .clock || defaults.bool(forKey: feature.availabilityKey)
     }
 
     var isAvailableOnCurrentHardware: Bool {
@@ -117,7 +130,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
     static func enabled(in defaults: UserDefaults) -> [MenuBarMetric] {
         order(in: defaults).filter {
             defaults.bool(forKey: $0.defaultsKey)
-                && defaults.bool(forKey: $0.feature.availabilityKey)
+                && $0.isFeatureAvailable(in: defaults)
                 && $0.isAvailableOnCurrentHardware
         }
     }
@@ -125,7 +138,7 @@ enum MenuBarMetric: String, CaseIterable, Identifiable {
     static func anyEnabled(in defaults: UserDefaults) -> Bool {
         allCases.contains {
             defaults.bool(forKey: $0.defaultsKey)
-                && defaults.bool(forKey: $0.feature.availabilityKey)
+                && $0.isFeatureAvailable(in: defaults)
                 && $0.isAvailableOnCurrentHardware
         }
     }
@@ -194,6 +207,8 @@ enum MenuBarLabelStyle: String, CaseIterable {
 /// One drawable piece of the menu bar text: plain (adaptive) text, or the memory
 /// pressure dot, which carries a green/yellow/red color.
 enum MenuBarSegment {
+    /// The date and time, drawn by MenuBarClock.
+    case clock
     case text(String)
     case symbol(String)
     case largeSymbol(String)
@@ -548,6 +563,8 @@ enum MenuBarRenderer {
                                                  warning: batteryWarning(for: snapshot.power),
                                                  style: style)])
                 }
+            case .clock:
+                groups.append([.clock])
             case .batteryTime:
                 if let power = snapshot.power,
                    let seconds = power.timeRemainingSeconds,
@@ -677,6 +694,8 @@ enum MenuBarRenderer {
             return 12      // clock symbol + "99h 59m"
         case (_, .connectedDevices):
             return 6       // symbol + " 99"
+        case (_, .clock):
+            return 6       // two short lines
         case (_, .fanSpeed):
             let count = max(1, SystemMonitor.fanTelemetryCount)
             return FanControlPolicy.menuBarWidthUnits(fanCount: count)
@@ -722,6 +741,8 @@ enum MenuBarRenderer {
         let stacked = usesStackedLayout(for: snapshot, metrics: metrics, allowStacked: allowStacked)
         for segment in segments(for: snapshot, metrics: metrics, allowStacked: allowStacked) {
             switch segment {
+            case .clock:
+                result.append(clockAttachment())
             case let .text(string):
                 let rendered = string == "\n" && !linePrefix.isEmpty ? "\n" + linePrefix : string
                 result.append(NSAttributedString(string: rendered))

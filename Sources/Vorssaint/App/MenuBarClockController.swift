@@ -3,18 +3,16 @@
 
 import AppKit
 
-/// The date and time, drawn as the last segment of the readings item so it
-/// sits and clicks with them: two lines, the time large below and a compact
+/// The date and time as a menu bar reading (MenuBarMetric.clock), placed and
+/// ordered with the others: two lines, the time large below and a compact
 /// date above, formatted for the current locale from the
 /// `menuBarClockDateFormat` ("MdEEE": "11/6 (목)") and
 /// `menuBarClockTimeFormat` ("Hmm": "15:42", always 24-hour; "jmm" follows
 /// the system's hour cycle) templates. An empty date template leaves the time
-/// alone on one line. `menuBarClock -bool NO` turns it off at the next launch.
-/// The readings item refreshes with every monitor tick, which carries the
-/// minute over within a couple of seconds.
+/// alone on one line. It is shown and ordered from the readings tiles in
+/// Settings like any reading; the readings refresh with every monitor tick,
+/// which carries the minute over within a couple of seconds.
 enum MenuBarClock {
-    static let isEnabled: Bool = UserDefaults.standard.object(forKey: "menuBarClock") as? Bool ?? true
-
     private static let dateFormatter: DateFormatter = formatter(key: "menuBarClockDateFormat", template: "MdEEE")
     private static let timeFormatter: DateFormatter = formatter(key: "menuBarClockTimeFormat", template: "Hmm")
     private static let cache = NSCache<NSString, NSImage>()
@@ -26,10 +24,14 @@ enum MenuBarClock {
         return formatter
     }
 
+    /// The two lines for a moment; the date is empty when its template is.
+    static func strings(at now: Date = Date()) -> (date: String, time: String) {
+        (dateFormatter.dateFormat.isEmpty ? "" : dateFormatter.string(from: now), timeFormatter.string(from: now))
+    }
+
     /// The image for this minute; one per minute is drawn, the rest reuse it.
     static func image(at now: Date = Date()) -> NSImage {
-        let date = dateFormatter.dateFormat.isEmpty ? "" : dateFormatter.string(from: now)
-        let time = timeFormatter.string(from: now)
+        let (date, time) = strings(at: now)
         let key = "\(date)|\(time)" as NSString
         if let cached = cache.object(forKey: key) { return cached }
         let image = image(date: date, time: time)

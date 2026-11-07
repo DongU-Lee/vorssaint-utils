@@ -137,6 +137,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         }
         statusController.onMetricClick = { [weak self] metric, button in
             self?.captureStatusClick()
+            // The date and time has no detail of its own; it opens the panel
+            // like the readings item does.
+            if metric == .clock { self?.toggleMainPopover(); return }
             self?.showMetricPanel(for: metric, anchoredTo: button)
         }
         statusController.onClipboardPreviewClick = {

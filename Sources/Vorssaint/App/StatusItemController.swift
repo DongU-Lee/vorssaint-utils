@@ -21,6 +21,8 @@ final class StatusItemController {
     /// rather than a SystemSnapshot reading.
     private var clipboardPreviewStatusItem: NSStatusItem?
     private var metricStatusItems: [String: NSStatusItem] = [:]
+    /// The separate items' order as last laid out, left to right.
+    private var appliedMetricItemOrder: [String] = []
     private var metricStatusItemFocus: [String: MenuBarMetric] = [:]
     private var cancellables = Set<AnyCancellable>()
     private var titleTimer: Timer?
@@ -486,6 +488,7 @@ final class StatusItemController {
             refreshMetricStatusItems(metrics: metrics, snapshot: snapshot, strings: strings)
         } else {
             removeMetricStatusItems(except: Set<String>())
+            appliedMetricItemOrder = []
             renderedMetricItemCount = 0
         }
         if !separateMetrics, !metrics.isEmpty {
@@ -496,12 +499,6 @@ final class StatusItemController {
             if metricsTitle.length > 0 {
                 if title.length > 0 { title.append(NSAttributedString(string: "  ")) }
                 title.append(metricsTitle)
-                // The date and time closes the readings, in the same item so
-                // it clicks and moves with them.
-                if MenuBarClock.isEnabled {
-                    title.append(NSAttributedString(string: "  "))
-                    title.append(MenuBarRenderer.clockAttachment())
-                }
             }
         }
 
@@ -597,6 +594,7 @@ final class StatusItemController {
         let groups = Self.metricStatusGroups(for: metrics, strings: strings)
         let wanted = Set(groups.map(\.id))
         removeMetricStatusItems(except: wanted)
+        layOutMetricStatusItems(in: groups)
         var rendered = 0
         defer { renderedMetricItemCount = rendered }
 
@@ -694,7 +692,7 @@ final class StatusItemController {
                                      temperature: .batteryTemperature,
                                      primaryTitle: strings.batteryLabel)
             case .memory, .network, .diskUsage, .diskActivity, .batteryTime, .peripheralBattery, .power,
-                 .fanSpeed, .connectedDevices:
+                 .fanSpeed, .connectedDevices, .clock:
                 let id = metric.rawValue
                 guard emittedIDs.insert(id).inserted else { continue }
                 groups.append(MetricStatusGroup(id: id,
@@ -748,6 +746,26 @@ final class StatusItemController {
         guard let identifier = button.identifier?.rawValue,
               identifier.hasPrefix(prefix) else { return nil }
         return metricStatusItemFocus[String(identifier.dropFirst(prefix.count))]
+    }
+
+    /// Keeps the separate items in the order set in Settings. macOS places a
+    /// new item at the left end of the status area and remembers where each
+    /// one was, so when the order or the set changes every item is taken
+    /// down, its remembered position forgotten, and the items are created
+    /// again from the last to the first: each lands left of the one before,
+    /// which leaves them in order. Unchanged order touches nothing.
+    private func layOutMetricStatusItems(in groups: [MetricStatusGroup]) {
+        let order = groups.map(\.id)
+        guard order != appliedMetricItemOrder else { return }
+        appliedMetricItemOrder = order
+        for id in Array(metricStatusItems.keys) { removeMetricStatusItem(for: id) }
+        for id in order {
+            let name = "\(Self.metricAutosavePrefix).\(id)"
+            UserDefaults.standard.removeObject(forKey: StatusItemPlacementSupport.preferredPositionKey(for: name))
+        }
+        for group in groups.reversed() {
+            _ = installMetricStatusItem(for: group)
+        }
     }
 
     private func removeMetricStatusItems(except wanted: Set<String>) {

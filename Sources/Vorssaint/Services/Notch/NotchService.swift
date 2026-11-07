@@ -1259,7 +1259,7 @@ final class NotchService: ObservableObject {
     }
 
     private func metricIsAvailable(_ metric: MetricDetailKind) -> Bool {
-        MenuBarMetric.allCases.contains { $0.detailKind == metric && $0.feature.isAvailable }
+        MenuBarMetric.allCases.contains { $0 != .clock && $0.detailKind == metric && $0.feature.isAvailable }
     }
 
     func stop(restoreCapture: Bool = true) {

@@ -114,6 +114,10 @@ extension MenuBarMetric {
             return .fan
         case .connectedDevices:
             return .connectedDevices
+        // Never opened: a click on the date and time opens the main panel
+        // (AppDelegate.onMetricClick); this only satisfies the mapping.
+        case .clock:
+            return .power
         }
     }
 }
