@@ -378,9 +378,12 @@ final class StatusItemController {
         // items, so hiding means the whole main item steps aside instead of
         // just its image (which is all that item has). With Dynamic Island
         // standing in, the item goes whenever it has no text of its own.
+        // Not for the hide-icon option, though: separate items open their
+        // own details, so the main item is the only way into the panel and
+        // Settings and stays put.
         let mainItemHidden = (islandHides && button.attributedTitle.length == 0)
             || MenuBarSpacingSupport.shouldHideMainStatusItem(
-                optionEnabled: optionEnabled,
+                optionEnabled: false,
                 separateMetrics: separateMetrics,
                 metricItemsShown: renderedMetricItemCount,
                 renderedTitleLength: button.attributedTitle.length,
