@@ -1051,6 +1051,15 @@ struct WindowLayoutFrame: Equatable {
             && abs(size.width - other.size.width) <= tolerance
             && abs(size.height - other.size.height) <= tolerance
     }
+
+    /// The frame `progress` (0...1) of the way to `other`, rounded to whole
+    /// points so each step is a real move.
+    func interpolated(to other: WindowLayoutFrame, progress: CGFloat) -> WindowLayoutFrame {
+        func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { (a + (b - a) * progress).rounded() }
+        return WindowLayoutFrame(origin: CGPoint(x: mix(origin.x, other.origin.x), y: mix(origin.y, other.origin.y)),
+                                 size: CGSize(width: mix(size.width, other.size.width),
+                                              height: mix(size.height, other.size.height)))
+    }
 }
 
 /// What a placement left behind: the frame it asked for, the one the

@@ -587,6 +587,7 @@ final class WindowLayoutService: ObservableObject {
 
         let original = self.frame(of: window)
         settledFrames.removeValue(forKey: windowKey)
+        animateTransition(from: original, to: frame, on: window)
         if attempt(frame, targetRect: targetRect, visibleFrame: screenVisibleFrame, action: action, on: window) {
             assistiveModeSuspensions.removeValue(forKey: windowID)?.resume()
             // Read-back is needed only by the side cycle or opt-in drag restore.
@@ -790,6 +791,35 @@ final class WindowLayoutService: ObservableObject {
             return true
         default:
             return false
+        }
+    }
+
+    /// Carries the window most of the way to its new frame in short steps
+    /// (about 0.2 s, easing out), so a layout shortcut glides instead of
+    /// jumping; the exact placement and its retries still follow in
+    /// `attempt`. Steps are paced by the clock, so an app slow to take each
+    /// move gets fewer steps, not a longer trip. Skipped when the
+    /// `windowLayoutAnimate` preference is off, when Reduce Motion is on, or
+    /// when the window hardly moves.
+    private func animateTransition(from start: WindowLayoutFrame?, to end: WindowLayoutFrame, on window: AXUIElement) {
+        guard UserDefaults.standard.bool(forKey: DefaultsKey.windowLayoutAnimate),
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let start, !start.isClose(to: end, tolerance: 4) else { return }
+        let duration: CFTimeInterval = 0.2
+        let stepInterval: CFTimeInterval = 1.0 / 60
+        let began = CACurrentMediaTime()
+        while true {
+            let elapsed = CACurrentMediaTime() - began
+            // The last step is the real placement, made by `attempt`.
+            guard elapsed < duration else { break }
+            let linear = CGFloat(elapsed / duration)
+            let eased = 1 - pow(1 - linear, 3)
+            let step = start.interpolated(to: end, progress: eased)
+            _ = setPosition(step.origin, on: window)
+            _ = setSize(step.size, on: window)
+            let next = began + (floor(elapsed / stepInterval) + 1) * stepInterval
+            let wait = next - CACurrentMediaTime()
+            if wait > 0 { usleep(useconds_t(wait * 1_000_000)) }
         }
     }
 

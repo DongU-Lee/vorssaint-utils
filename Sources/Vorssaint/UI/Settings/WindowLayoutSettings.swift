@@ -20,6 +20,7 @@ struct WindowLayoutSettings: View {
     @AppStorage(DefaultsKey.windowEdgeSnapDisabledZones) private var edgeSnapDisabledZones = ""
     @AppStorage(DefaultsKey.windowEdgeSnapZoneActions) private var edgeSnapZoneActions = ""
     @AppStorage(DefaultsKey.windowEdgeSnapRestoreOnDrag) private var edgeSnapRestoreOnDrag = false
+    @AppStorage(DefaultsKey.windowLayoutAnimate) private var animateLayout = true
     @AppStorage(DefaultsKey.windowGestureEnabled) private var gestureEnabled = false
     @AppStorage(DefaultsKey.windowGestureModifiers) private var gestureModifiers = WindowGestureSupport.defaultModifierStorageValue
     @AppStorage(DefaultsKey.windowGestureRaiseWindow) private var gestureRaiseWindow = false
@@ -71,6 +72,18 @@ struct WindowLayoutSettings: View {
                     Toggle(WindowStageManagerStrings.localized(l10n.language).title,
                            isOn: $reserveStageManagerSpace)
                     Text(WindowStageManagerStrings.localized(l10n.language).caption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if AppFeature.windowLayout.isAvailable {
+                Section {
+                    let korean = l10n.language.rawValue.hasPrefix("ko")
+                    Toggle(korean ? "창을 옮길 때 부드럽게 움직이기" : "Glide windows into place", isOn: $animateLayout)
+                    Text(korean
+                         ? "정렬 단축키나 메뉴로 창을 옮기면 순간이동하지 않고 약 0.2초 동안 미끄러지듯 이동합니다. 시스템 설정의 '동작 줄이기'가 켜져 있으면 움직이지 않습니다."
+                         : "Layout shortcuts and menu actions move the window over about 0.2 seconds instead of jumping. Off while Reduce Motion is on.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
