@@ -263,7 +263,7 @@ enum NotchAgentSupport {
                   let window = focusedLimit(snapshot.limits[provider], focus: focus, now: now) else { return elapsed() }
             let share = AgentFormat.percent(display == .used ? window.usedFraction : window.remainingFraction)
             guard let resets = AgentLimitSupport.displayedReset(window, now: now) else { return share }
-            return share + readingSeparator + AgentFormat.shortCountdown(to: resets, now: now, locale: .autoupdatingCurrent)
+            return share + readingSeparator + AgentFormat.shortCountdown(to: resets, now: now)
         }
     }
 
@@ -457,23 +457,16 @@ enum AgentFormat {
         return duration(max(60, seconds), locale: locale, units: seconds >= 3600 ? 2 : 1)
     }
 
-    /// The same in one unit for the closed island: minutes under an hour,
-    /// hours under two days, then days, always rounded down so the renewal
-    /// is never closer than it reads.
-    static func shortCountdown(to date: Date, now: Date, locale: Locale) -> String {
-        let seconds = max(60, date.timeIntervalSince(now).isFinite ? date.timeIntervalSince(now) : 0)
-        // Only the chosen unit is allowed, or 33 hours would read as 1d 9h.
-        let (components, unit): (DateComponents, NSCalendar.Unit) = seconds >= 172_800
-            ? (DateComponents(day: Int(seconds / 86_400)), .day)
-            : seconds >= 3600 ? (DateComponents(hour: Int(seconds / 3600)), .hour)
-            : (DateComponents(minute: Int(seconds / 60)), .minute)
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .abbreviated
-        formatter.allowedUnits = unit
-        var calendar = Calendar.current
-        calendar.locale = locale
-        formatter.calendar = calendar
-        return formatter.string(from: components) ?? ""
+    /// The same in one unit for the closed island, in the unit letters
+    /// every language reads: minutes under an hour, hours under two days,
+    /// then days, always rounded down so the renewal is never closer than
+    /// it reads. "43m", "33h", "3d".
+    static func shortCountdown(to date: Date, now: Date) -> String {
+        let interval = date.timeIntervalSince(now)
+        let seconds = Int(max(60, interval.isFinite ? interval : 0))
+        if seconds >= 172_800 { return "\(seconds / 86_400)d" }
+        if seconds >= 3600 { return "\(seconds / 3600)h" }
+        return "\(seconds / 60)m"
     }
 
     /// A running stopwatch: "0:42", "12:05", "1:02:05".
