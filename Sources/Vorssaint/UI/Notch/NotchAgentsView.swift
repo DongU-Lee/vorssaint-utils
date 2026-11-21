@@ -386,8 +386,7 @@ private struct NotchAgentLimitsCard: View {
     /// minutes, never seconds on a card that redraws every few. The day and
     /// time are in the tooltip.
     private func countdown(to date: Date) -> String {
-        let seconds = date.timeIntervalSince(now)
-        return AgentFormat.duration(max(60, seconds), locale: locale, units: seconds >= 3600 ? 2 : 1)
+        AgentFormat.countdown(to: date, now: now, locale: locale)
     }
 
     private func help(_ window: AgentLimitWindow) -> String {

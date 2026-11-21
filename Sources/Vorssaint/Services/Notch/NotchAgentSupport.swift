@@ -213,7 +213,7 @@ enum NotchAgentSupport {
 
     /// A wing is never narrower than the music strip's, nor wide enough to
     /// crowd the menus beside the camera.
-    static let stripWingRange: ClosedRange<CGFloat> = 44...80
+    static let stripWingRange: ClosedRange<CGFloat> = 44...104
     /// Air between the camera and what sits beside it.
     static let stripCameraGap: CGFloat = 6
 
@@ -238,7 +238,9 @@ enum NotchAgentSupport {
         case .limit:
             guard let provider = AgentProvider.allCases.first(where: { provider in live.contains { $0.provider == provider } }),
                   let window = focusedLimit(snapshot.limits[provider], focus: focus, now: now) else { return elapsed() }
-            return AgentFormat.percent(display == .used ? window.usedFraction : window.remainingFraction)
+            let share = AgentFormat.percent(display == .used ? window.usedFraction : window.remainingFraction)
+            guard let resets = AgentLimitSupport.displayedReset(window, now: now) else { return share }
+            return share + " · " + AgentFormat.countdown(to: resets, now: now, locale: .autoupdatingCurrent, units: 1)
         }
     }
 
@@ -423,6 +425,14 @@ enum AgentFormat {
         // can lose a week across a month.
         let count = max(0, days)
         return formatter.string(from: weeks ? DateComponents(weekOfMonth: count / 7) : DateComponents(day: count)) ?? ""
+    }
+
+    /// How long until a window renews: days and hours, or hours and
+    /// minutes, never seconds on a reading that redraws every few. The
+    /// closed island keeps only the largest unit, rounded.
+    static func countdown(to date: Date, now: Date, locale: Locale, units: Int = 2) -> String {
+        let seconds = date.timeIntervalSince(now)
+        return duration(max(60, seconds), locale: locale, units: seconds >= 3600 ? units : 1)
     }
 
     /// A running stopwatch: "0:42", "12:05", "1:02:05".

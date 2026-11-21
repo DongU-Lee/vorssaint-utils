@@ -2473,11 +2473,12 @@ enum NotchAgentTests {
                 let empty = AgentUsageSnapshot()
                 let sample = NotchAgentSupport.stripSampleSnapshot(empty, provider: provider, focus: focus, now: now)
                 let used = focus == .session ? 0.32 : 0.57
+                let resets = " · " + AgentFormat.countdown(to: now.addingTimeInterval(focus == .session ? 3600 : 86_400), now: now, locale: .autoupdatingCurrent, units: 1)
                 suite.expect(NotchAgentSupport.stripReading(sample, readout: .limit, display: .used, focus: focus, now: now)
-                                == AgentFormat.percent(used),
+                                == AgentFormat.percent(used) + resets,
                              "\(provider.rawValue) settings preview illustrates the selected \(focus.rawValue) limit without account data")
                 suite.expect(NotchAgentSupport.stripReading(sample, readout: .limit, display: .remaining, focus: focus, now: now)
-                                == AgentFormat.percent(1 - used),
+                                == AgentFormat.percent(1 - used) + resets,
                              "settings limit preview respects remaining versus used")
                 suite.expect(empty.live.isEmpty && empty.limits.isEmpty,
                              "preview examples never populate the real usage snapshot")
@@ -2509,10 +2510,20 @@ enum NotchAgentTests {
                                       resetsAt: now.addingTimeInterval(86_400))
         let limited = snapshot([session(.claude, startedAgo: 754)],
                                limits: [.claude: AgentLimits(provider: .claude, windows: [window], observedAt: now, source: .claudeApp)])
-        suite.expect(NotchAgentSupport.stripReading(limited, readout: .limit, display: .remaining, now: now) == AgentFormat.percent(0.21)
-                        && NotchAgentSupport.stripReading(limited, readout: .limit, display: .used, now: now) == AgentFormat.percent(0.79)
+        let day = " · " + AgentFormat.countdown(to: now.addingTimeInterval(86_400), now: now, locale: .autoupdatingCurrent, units: 1)
+        let hour = " · " + AgentFormat.countdown(to: now.addingTimeInterval(3_600), now: now, locale: .autoupdatingCurrent, units: 1)
+        suite.expect(NotchAgentSupport.stripReading(limited, readout: .limit, display: .remaining, now: now) == AgentFormat.percent(0.21) + day
+                        && NotchAgentSupport.stripReading(limited, readout: .limit, display: .used, now: now) == AgentFormat.percent(0.79) + day
                         && NotchAgentSupport.stripReading(short, readout: .limit, display: .remaining, now: now) == "12:34",
-                     "a limit reads as left or used, and falls back to the time while none is known")
+                     "a limit reads as left or used with its renewal, and falls back to the time while none is known")
+        let us = Locale(identifier: "en_US")
+        suite.expect(AgentFormat.countdown(to: now.addingTimeInterval(2_520), now: now, locale: us) == "42m"
+                        && AgentFormat.countdown(to: now.addingTimeInterval(16_200), now: now, locale: us) == "4h 30m"
+                        && AgentFormat.countdown(to: now.addingTimeInterval(140_400), now: now, locale: us) == "1d 15h",
+                     "a renewal reads as the time left: minutes, hours and minutes, or days and hours")
+        suite.expect(AgentFormat.countdown(to: now.addingTimeInterval(16_200), now: now, locale: us, units: 1) == "5h"
+                        && AgentFormat.countdown(to: now.addingTimeInterval(140_400), now: now, locale: us, units: 1) == "2d",
+                     "the closed island keeps only the largest unit of the time left")
         suite.expect(NotchAgentSupport.limitShare(window, display: .remaining, text: .enUS)
                         == "\(AgentFormat.percent(0.21)) left"
                         && NotchAgentSupport.limitShare(window, display: .used, text: .enUS)
@@ -2527,17 +2538,17 @@ enum NotchAgentTests {
             AgentLimitWindow(id: "o", kind: .weekly, minutes: 10_080, scope: "Opus", usedPercent: 95,
                              resetsAt: now.addingTimeInterval(86_400))], observedAt: now, source: .claudeApp)
         let working = snapshot([session(.claude, startedAgo: 754)], limits: [.claude: both])
-        suite.expect(NotchAgentSupport.stripReading(working, readout: .limit, display: .used, now: now) == AgentFormat.percent(0.95)
+        suite.expect(NotchAgentSupport.stripReading(working, readout: .limit, display: .used, now: now) == AgentFormat.percent(0.95) + day
                         && NotchAgentSupport.stripReading(working, readout: .limit, display: .used, focus: .session, now: now)
-                            == AgentFormat.percent(0.22)
+                            == AgentFormat.percent(0.22) + hour
                         && NotchAgentSupport.stripReading(working, readout: .limit, display: .used, focus: .weekly, now: now)
-                            == AgentFormat.percent(0.79),
+                            == AgentFormat.percent(0.79) + day,
                      "the closed island shows the chosen window, and a model's own allowance never stands for the week")
         suite.expect(NotchAgentSupport.stripReading(working, readout: .limit, display: .used, focus: .session,
                                                     now: now.addingTimeInterval(3_601)) == AgentFormat.percent(0),
                      "a chosen session that renewed reads as unspent")
         suite.expect(NotchAgentSupport.stripReading(limited, readout: .limit, display: .used, focus: .session, now: now)
-                        == AgentFormat.percent(0.79),
+                        == AgentFormat.percent(0.79) + day,
                      "without the chosen window the closed island shows the one closest to running out")
         let codexWeek = AgentLimits(provider: .codex, windows: [
             AgentLimitWindow(id: "cw", kind: .weekly, minutes: 10_080, scope: nil, usedPercent: 70,
