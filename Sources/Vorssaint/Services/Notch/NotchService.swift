@@ -794,14 +794,15 @@ final class NotchService: ObservableObject {
     /// and air beside the camera.
     private func agentStripWing(in geometry: NotchGeometry) -> CGFloat {
         let provisional = geometry.compactAgentGeometry(wing: NotchAgentSupport.stripWingRange.lowerBound)
-        let size = NotchAgentSupport.stripTextSize(height: provisional.compactActivityContentHeight)
-        let shape = NotchAgentSupport.readingShape(NotchAgentSupport.stripReading(
+        let lines = NotchAgentSupport.stripLines(NotchAgentSupport.stripReading(
             AgentUsageService.shared.snapshot, readout: NotchAgentSupport.readout(),
             display: NotchAgentSupport.limitDisplay(), focus: NotchAgentSupport.limitFocus(), now: Date()))
-        let width = (shape as NSString).size(withAttributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .medium)
-        ]).width
-        let reading = width.rounded(.up) + provisional.compactActivityEdgeInset(boxHeight: size * 0.72, radius: 0)
+        let size = NotchAgentSupport.stripLineSize(height: provisional.compactActivityContentHeight, lines: lines.count)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
+        let width = lines.map { (NotchAgentSupport.readingShape($0) as NSString).size(withAttributes: [.font: font]).width }
+            .max() ?? 0
+        let reading = width.rounded(.up) + provisional.compactActivityEdgeInset(
+            boxHeight: NotchAgentSupport.stripTextBox(size: size, lines: lines.count), radius: 0)
         // The marks on the other side, drawn as the strip draws them: two
         // working agents share a smaller size, each in a frame wider than it.
         let working = Set(AgentUsageService.shared.snapshot.live.map(\.provider)).count

@@ -218,6 +218,29 @@ enum NotchAgentSupport {
     static let stripCameraGap: CGFloat = 6
 
     static func stripTextSize(height: CGFloat) -> CGFloat { min(15, height - 7) }
+    /// Two stacked lines, like an allowance over its renewal, share the
+    /// strip's height.
+    static func stripLineSize(height: CGFloat, lines: Int) -> CGFloat {
+        lines > 1 ? min(11, (height - 6) / (1.1 * CGFloat(lines))) : stripTextSize(height: height)
+    }
+    /// Stacked lines sit closer than their font's own leading, so the stack
+    /// stays clear of the island's lower edge.
+    static let stripLineSpacing: CGFloat = -2
+
+    /// The height of a reading's glyphs, which keep clear of the island's
+    /// curve: a line's capitals, or a stack's whole block.
+    static func stripTextBox(size: CGFloat, lines: Int) -> CGFloat {
+        lines > 1 ? size * 1.2 * CGFloat(lines) + stripLineSpacing * CGFloat(lines - 1) : size * 0.72
+    }
+
+    /// Between an allowance and its renewal on one line.
+    static let readingSeparator = " · "
+
+    /// The closed island stacks an allowance over its renewal to keep its
+    /// wings narrow; every other reading stays on one line.
+    static func stripLines(_ reading: String) -> [String] {
+        reading.components(separatedBy: readingSeparator)
+    }
 
     /// What the strip shows beside the camera while agents work: the reading
     /// the person chose, or the time elapsed while that one is unknown.
@@ -240,7 +263,7 @@ enum NotchAgentSupport {
                   let window = focusedLimit(snapshot.limits[provider], focus: focus, now: now) else { return elapsed() }
             let share = AgentFormat.percent(display == .used ? window.usedFraction : window.remainingFraction)
             guard let resets = AgentLimitSupport.displayedReset(window, now: now) else { return share }
-            return share + " · " + AgentFormat.shortCountdown(to: resets, now: now, locale: .autoupdatingCurrent)
+            return share + readingSeparator + AgentFormat.shortCountdown(to: resets, now: now, locale: .autoupdatingCurrent)
         }
     }
 
