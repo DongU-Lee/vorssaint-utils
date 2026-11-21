@@ -62,17 +62,28 @@ struct NotchAgentStrip: View {
                             let lines = NotchAgentSupport.stripLines(text)
                             let size = NotchAgentSupport.stripLineSize(height: geometry.compactActivityContentHeight,
                                                                        lines: lines.count)
-                            VStack(alignment: .trailing, spacing: lines.count > 1 ? NotchAgentSupport.stripLineSpacing : 0) {
-                                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                                    Text(line)
-                                        .font(.system(size: NotchAgentSupport.stripLineSize(size, index: index, lines: lines.count),
-                                                      weight: .regular))
-                                        .monospacedDigit()
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.6)
+                            let gauge = lines.count > 1 ? limit(at: date, live: live) : nil
+                            let gaugeTint = gauge.map { agentLimitTint($0.provider, usedFraction: $0.window.usedFraction) } ?? tint
+                            HStack(spacing: NotchAgentSupport.stripGaugeSpacing) {
+                                if let gauge {
+                                    NotchAgentRing(value: display == NotchAgentLimitDisplay.used.rawValue
+                                                       ? gauge.window.usedFraction : gauge.window.remainingFraction,
+                                                   tint: gaugeTint, lineWidth: 2)
+                                        .frame(width: NotchAgentSupport.stripGaugeRing, height: NotchAgentSupport.stripGaugeRing)
+                                }
+                                VStack(alignment: gauge == nil ? .trailing : .leading,
+                                       spacing: lines.count > 1 ? NotchAgentSupport.stripLineSpacing : 0) {
+                                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                                        Text(line)
+                                            .font(.system(size: NotchAgentSupport.stripLineSize(size, index: index, lines: lines.count),
+                                                          weight: .regular))
+                                            .monospacedDigit()
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.6)
+                                            .foregroundStyle(index > 0 ? AnyShapeStyle(.white.opacity(0.55)) : AnyShapeStyle(gaugeTint))
+                                    }
                                 }
                             }
-                            .foregroundStyle(tint)
                                 // A reading that gains a digit, like an hour
                                 // passing, needs wider wings; the service
                                 // measures the same reading.
@@ -98,6 +109,12 @@ struct NotchAgentStrip: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { service.openActivity(.agents) }
         .accessibilityHint(FeatureStrings.notch(l10n.language).open)
+    }
+
+    private func limit(at now: Date, live: [AgentLiveSession]) -> (provider: AgentProvider, window: AgentLimitWindow)? {
+        var snapshot = usage.snapshot
+        snapshot.live = live
+        return NotchAgentSupport.stripLimit(snapshot, focus: NotchAgentLimitFocus(rawValue: focus) ?? .mostUsed, now: now)
     }
 
     private func reading(at now: Date, live: [AgentLiveSession]) -> String {

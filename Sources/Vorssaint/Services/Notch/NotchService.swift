@@ -803,7 +803,9 @@ final class NotchService: ObservableObject {
                                                         weight: .regular)
             return (NotchAgentSupport.readingShape(line) as NSString).size(withAttributes: [.font: font]).width
         }.max() ?? 0
-        let reading = width.rounded(.up) + provisional.compactActivityEdgeInset(
+        // A stack is an allowance, drawn beside its ring.
+        let gauge = lines.count > 1 ? NotchAgentSupport.stripGaugeRing + NotchAgentSupport.stripGaugeSpacing : 0
+        let reading = (width + gauge).rounded(.up) + provisional.compactActivityEdgeInset(
             boxHeight: NotchAgentSupport.stripTextBox(size: size, lines: lines.count), radius: 0)
         // The marks on the other side, drawn as the strip draws them: two
         // working agents share a smaller size, each in a frame wider than it.

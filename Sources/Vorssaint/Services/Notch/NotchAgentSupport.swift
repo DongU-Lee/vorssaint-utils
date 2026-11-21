@@ -223,11 +223,14 @@ enum NotchAgentSupport {
     static func stripLineSize(height: CGFloat, lines: Int) -> CGFloat {
         lines > 1 ? min(11, (height - 6) / (1.1 * CGFloat(lines))) : stripTextSize(height: height)
     }
-    /// In a stack the share on top is a little smaller than the renewal
+    /// In a stack the share on top leads, a size above the dimmer renewal
     /// below it.
     static func stripLineSize(_ size: CGFloat, index: Int, lines: Int) -> CGFloat {
-        lines > 1 && index == 0 ? size - 1.5 : size
+        lines > 1 ? size - (index == 0 ? 1 : 1.5) : size
     }
+    /// A stacked allowance sits beside a ring of the same share.
+    static let stripGaugeRing: CGFloat = 13
+    static let stripGaugeSpacing: CGFloat = 5
     /// Stacked lines sit closer than their font's own leading, so the stack
     /// stays clear of the island's lower edge.
     static let stripLineSpacing: CGFloat = -2
@@ -247,6 +250,14 @@ enum NotchAgentSupport {
         reading.components(separatedBy: readingSeparator)
     }
 
+    /// The allowance the strip reads: the first working agent's chosen window.
+    static func stripLimit(_ snapshot: AgentUsageSnapshot, focus: NotchAgentLimitFocus,
+                           now: Date) -> (provider: AgentProvider, window: AgentLimitWindow)? {
+        guard let provider = AgentProvider.allCases.first(where: { provider in snapshot.live.contains { $0.provider == provider } }),
+              let window = focusedLimit(snapshot.limits[provider], focus: focus, now: now) else { return nil }
+        return (provider, window)
+    }
+
     /// What the strip shows beside the camera while agents work: the reading
     /// the person chose, or the time elapsed while that one is unknown.
     static func stripReading(_ snapshot: AgentUsageSnapshot, readout: NotchAgentReadout,
@@ -264,8 +275,7 @@ enum NotchAgentSupport {
         case .cost:
             return AgentFormat.cost(live.reduce(0) { $0 + $1.cost })
         case .limit:
-            guard let provider = AgentProvider.allCases.first(where: { provider in live.contains { $0.provider == provider } }),
-                  let window = focusedLimit(snapshot.limits[provider], focus: focus, now: now) else { return elapsed() }
+            guard let window = stripLimit(snapshot, focus: focus, now: now)?.window else { return elapsed() }
             let share = AgentFormat.percent(display == .used ? window.usedFraction : window.remainingFraction)
             guard let resets = AgentLimitSupport.displayedReset(window, now: now) else { return share }
             return share + readingSeparator + AgentFormat.shortCountdown(to: resets, now: now)
