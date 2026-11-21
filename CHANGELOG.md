@@ -16,7 +16,7 @@ More reliable window switching, audio, notifications and display controls, with 
 - Dynamic Island's controls can show a Cleaning Mode shortcut that locks the keyboard in one click, enabled under Content in its settings and placeable as a floating button.
 
 ### Changed
-- Dynamic Island's closed agent reading shows how long until the allowance renews beside the share left or used, in hours under two days and rounded down, stacked in a dimmer line under the share beside a ring of the same share, so the wings stay narrow.
+- Dynamic Island's closed agent reading shows how long until the allowance renews beside the share left or used, in hours under two days and rounded down, stacked in a dimmer line under the share beside a ring of the same share, so the wings stay narrow. Resting with the AI allowance shows the ring and share left of the camera and the renewal right of it, in the same type.
 - GIF exports can retain the full edited resolution and offer scale and frame-rate controls, with captions kept proportional at smaller sizes. Thanks to @COMEBACKISREAL.
 - Large clipboard images can be resized before opening in the screenshot editor, preserving native image formats, the primary HEIC image and its orientation. Thanks to @kit101.
 - Supported DDC monitors can use software picture dimming instead of hardware brightness commands, with pending brightness changes cancelled when switching modes. Thanks to @yavuzmeteafsar.

@@ -707,7 +707,7 @@ struct NotchRestingStrip: View {
                                 .foregroundStyle(batteryTint)
                                 .padding(.leading, restingBatteryInset)
                         case .agents:
-                            NotchAgentRestingWing(leading: true)
+                            NotchAgentRestingGauge(leading: true, height: geometry.stripHeight)
                                 .padding(.leading, restingBatteryInset)
                         case .none: EmptyView()
                         }
@@ -732,7 +732,7 @@ struct NotchRestingStrip: View {
                                     .padding(.trailing, restingBatteryInset)
                             }
                         case .agents:
-                            NotchAgentRestingWing(leading: false)
+                            NotchAgentRestingGauge(leading: false, height: geometry.stripHeight)
                                 .padding(.trailing, restingBatteryInset)
                         case .none: EmptyView()
                         }

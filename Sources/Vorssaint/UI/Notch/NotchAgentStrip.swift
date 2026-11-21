@@ -62,28 +62,8 @@ struct NotchAgentStrip: View {
                             let lines = NotchAgentSupport.stripLines(text)
                             let size = NotchAgentSupport.stripLineSize(height: geometry.compactActivityContentHeight,
                                                                        lines: lines.count)
-                            let gauge = lines.count > 1 ? limit(at: date, live: live) : nil
-                            let gaugeTint = gauge.map { agentLimitTint($0.provider, usedFraction: $0.window.usedFraction) } ?? tint
-                            HStack(spacing: NotchAgentSupport.stripGaugeSpacing) {
-                                if let gauge {
-                                    NotchAgentRing(value: display == NotchAgentLimitDisplay.used.rawValue
-                                                       ? gauge.window.usedFraction : gauge.window.remainingFraction,
-                                                   tint: gaugeTint, lineWidth: 2)
-                                        .frame(width: NotchAgentSupport.stripGaugeRing, height: NotchAgentSupport.stripGaugeRing)
-                                }
-                                VStack(alignment: gauge == nil ? .trailing : .leading,
-                                       spacing: lines.count > 1 ? NotchAgentSupport.stripLineSpacing : 0) {
-                                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                                        Text(line)
-                                            .font(.system(size: NotchAgentSupport.stripLineSize(size, index: index, lines: lines.count),
-                                                          weight: .regular))
-                                            .monospacedDigit()
-                                            .lineLimit(1)
-                                            .minimumScaleFactor(0.6)
-                                            .foregroundStyle(index > 0 ? AnyShapeStyle(.white.opacity(0.55)) : AnyShapeStyle(gaugeTint))
-                                    }
-                                }
-                            }
+                            NotchAgentGauge(lines: lines, limit: lines.count > 1 ? limit(at: date, live: live) : nil,
+                                            showsUsed: display == NotchAgentLimitDisplay.used.rawValue, size: size, tint: tint)
                                 // A reading that gains a digit, like an hour
                                 // passing, needs wider wings; the service
                                 // measures the same reading.
@@ -184,6 +164,84 @@ struct NotchAgentRestingWing: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
+        }
+    }
+}
+
+/// A reading as the closed island draws it. An allowance stacks its share
+/// over the time until it renews, beside a ring of the same share; any
+/// other reading is a single line.
+struct NotchAgentGauge: View {
+    let lines: [String]
+    let limit: (provider: AgentProvider, window: AgentLimitWindow)?
+    let showsUsed: Bool
+    let size: CGFloat
+    let tint: Color
+
+    var body: some View {
+        let gaugeTint = limit.map { agentLimitTint($0.provider, usedFraction: $0.window.usedFraction) } ?? tint
+        HStack(spacing: NotchAgentSupport.stripGaugeSpacing) {
+            if let limit {
+                NotchAgentRing(value: showsUsed ? limit.window.usedFraction : limit.window.remainingFraction,
+                               tint: gaugeTint, lineWidth: 2)
+                    .frame(width: NotchAgentSupport.stripGaugeRing, height: NotchAgentSupport.stripGaugeRing)
+            }
+            VStack(alignment: limit == nil ? .trailing : .leading,
+                   spacing: lines.count > 1 ? NotchAgentSupport.stripLineSpacing : 0) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                    Text(line)
+                        .font(.system(size: NotchAgentSupport.stripLineSize(size, index: index, lines: lines.count),
+                                      weight: .regular))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .foregroundStyle(index > 0 ? AnyShapeStyle(.white.opacity(0.55)) : AnyShapeStyle(gaugeTint))
+                }
+            }
+        }
+    }
+}
+
+/// The notched island at rest with an allowance: a ring and the share on
+/// the left of the camera, the time until it renews on the right, in the
+/// same type as a working agent's gauge. A working agent keeps its mark,
+/// which is how the two states tell apart. Without an allowance it rests
+/// as before.
+struct NotchAgentRestingGauge: View {
+    let leading: Bool
+    let height: CGFloat
+    @ObservedObject private var usage = AgentUsageService.shared
+    @AppStorage(DefaultsKey.notchAgentsLimitDisplay) private var display = NotchAgentLimitDisplay.remaining.rawValue
+    @AppStorage(DefaultsKey.notchAgentsLimitFocus) private var focus = NotchAgentLimitFocus.mostUsed.rawValue
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            content(now: context.date)
+        }
+    }
+
+    @ViewBuilder private func content(now: Date) -> some View {
+        let showsUsed = display == NotchAgentLimitDisplay.used.rawValue
+        if let limit = NotchAgentSupport.restingLimit(usage.snapshot, focus: NotchAgentLimitFocus(rawValue: focus) ?? .mostUsed,
+                                                      now: now) {
+            let lines = NotchAgentSupport.stripLines(NotchAgentSupport.limitReading(
+                limit.window, display: showsUsed ? .used : .remaining, now: now))
+            let size = NotchAgentSupport.stripLineSize(height: height, lines: 2)
+            let tint = agentLimitTint(limit.provider, usedFraction: limit.window.usedFraction)
+            if leading {
+                HStack(spacing: NotchAgentSupport.restingGaugeSpacing) {
+                    NotchAgentRing(value: showsUsed ? limit.window.usedFraction : limit.window.remainingFraction,
+                                   tint: tint, lineWidth: 2)
+                        .frame(width: NotchAgentSupport.stripGaugeRing, height: NotchAgentSupport.stripGaugeRing)
+                    Text(lines[0]).foregroundStyle(tint)
+                }
+                .font(.system(size: size, weight: .regular)).monospacedDigit().lineLimit(1)
+            } else if lines.count > 1 {
+                Text(lines[1]).font(.system(size: size, weight: .regular)).monospacedDigit().lineLimit(1)
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+        } else {
+            NotchAgentRestingWing(leading: leading)
         }
     }
 }

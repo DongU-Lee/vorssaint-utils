@@ -228,6 +228,10 @@ enum NotchAgentSupport {
     static func stripLineSize(_ size: CGFloat, index: Int, lines: Int) -> CGFloat {
         lines > 1 ? size - (index == 0 ? 1 : 1.5) : size
     }
+    /// The resting island's wings while it rests with an allowance, wide
+    /// enough for the same gauge as a working agent's.
+    static let restingWing: CGFloat = 62
+    static let restingGaugeSpacing: CGFloat = 4
     /// A stacked allowance sits beside a ring of the same share.
     static let stripGaugeRing: CGFloat = 13
     static let stripGaugeSpacing: CGFloat = 5
@@ -276,10 +280,15 @@ enum NotchAgentSupport {
             return AgentFormat.cost(live.reduce(0) { $0 + $1.cost })
         case .limit:
             guard let window = stripLimit(snapshot, focus: focus, now: now)?.window else { return elapsed() }
-            let share = AgentFormat.percent(display == .used ? window.usedFraction : window.remainingFraction)
-            guard let resets = AgentLimitSupport.displayedReset(window, now: now) else { return share }
-            return share + readingSeparator + AgentFormat.shortCountdown(to: resets, now: now)
+            return limitReading(window, display: display, now: now)
         }
+    }
+
+    /// An allowance's share, then the time until it renews when known.
+    static func limitReading(_ window: AgentLimitWindow, display: NotchAgentLimitDisplay, now: Date) -> String {
+        let share = AgentFormat.percent(display == .used ? window.usedFraction : window.remainingFraction)
+        guard let resets = AgentLimitSupport.displayedReset(window, now: now) else { return share }
+        return share + readingSeparator + AgentFormat.shortCountdown(to: resets, now: now)
     }
 
     /// Settings must illustrate the selected reading even before any agent
