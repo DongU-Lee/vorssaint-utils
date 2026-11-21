@@ -202,11 +202,11 @@ struct NotchAgentGauge: View {
     }
 }
 
-/// The notched island at rest with an allowance: a ring and the share on
-/// the left of the camera, the time until it renews on the right, in the
-/// same type as a working agent's gauge. A working agent keeps its mark,
-/// which is how the two states tell apart. Without an allowance it rests
-/// as before.
+/// The notched island at rest with an allowance, as the system's own
+/// compact activities read: a mark on the left of the camera, the value on
+/// the right. The ring of the share is the mark, and the share stacks over
+/// the time until it renews in the same type as a working agent's gauge,
+/// whose own mark is the agent's. Without an allowance it rests as before.
 struct NotchAgentRestingGauge: View {
     let leading: Bool
     let height: CGFloat
@@ -226,19 +226,14 @@ struct NotchAgentRestingGauge: View {
                                                       now: now) {
             let lines = NotchAgentSupport.stripLines(NotchAgentSupport.limitReading(
                 limit.window, display: showsUsed ? .used : .remaining, now: now))
-            let size = NotchAgentSupport.stripLineSize(height: height, lines: 2)
+            let size = NotchAgentSupport.stripLineSize(height: height, lines: lines.count)
             let tint = agentLimitTint(limit.provider, usedFraction: limit.window.usedFraction)
             if leading {
-                HStack(spacing: NotchAgentSupport.restingGaugeSpacing) {
-                    NotchAgentRing(value: showsUsed ? limit.window.usedFraction : limit.window.remainingFraction,
-                                   tint: tint, lineWidth: 2)
-                        .frame(width: NotchAgentSupport.stripGaugeRing, height: NotchAgentSupport.stripGaugeRing)
-                    Text(lines[0]).foregroundStyle(tint)
-                }
-                .font(.system(size: size, weight: .regular)).monospacedDigit().lineLimit(1)
-            } else if lines.count > 1 {
-                Text(lines[1]).font(.system(size: size, weight: .regular)).monospacedDigit().lineLimit(1)
-                    .foregroundStyle(.white.opacity(0.55))
+                NotchAgentRing(value: showsUsed ? limit.window.usedFraction : limit.window.remainingFraction,
+                               tint: tint, lineWidth: 2.2)
+                    .frame(width: NotchAgentSupport.restingGaugeRing, height: NotchAgentSupport.restingGaugeRing)
+            } else {
+                NotchAgentGauge(lines: lines, limit: nil, showsUsed: showsUsed, size: size, tint: tint)
             }
         } else {
             NotchAgentRestingWing(leading: leading)

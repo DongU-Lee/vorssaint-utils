@@ -228,10 +228,8 @@ enum NotchAgentSupport {
     static func stripLineSize(_ size: CGFloat, index: Int, lines: Int) -> CGFloat {
         lines > 1 ? size - (index == 0 ? 1 : 1.5) : size
     }
-    /// The resting island's wings while it rests with an allowance, wide
-    /// enough for the same gauge as a working agent's.
-    static let restingWing: CGFloat = 62
-    static let restingGaugeSpacing: CGFloat = 4
+    /// The resting island's ring, a mark as tall as the stack beside it.
+    static let restingGaugeRing: CGFloat = 15
     /// A stacked allowance sits beside a ring of the same share.
     static let stripGaugeRing: CGFloat = 13
     static let stripGaugeSpacing: CGFloat = 5

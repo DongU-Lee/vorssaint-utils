@@ -2422,9 +2422,7 @@ struct NotchGeometry: Equatable {
     }
 
     var restingWingWidth: CGFloat {
-        // Resting with an allowance draws the same gauge as a working agent.
-        let widest = NotchSupport.idleContent() == .agents ? NotchAgentSupport.restingWing : 44
-        let available = min(widest, max(0, compactSideRoom ?? 0)).rounded(.down)
+        let available = min(44, max(0, compactSideRoom ?? 0)).rounded(.down)
         return available >= 44 ? available : 0
     }
     var collapsed: CGSize {
