@@ -798,9 +798,11 @@ final class NotchService: ObservableObject {
             AgentUsageService.shared.snapshot, readout: NotchAgentSupport.readout(),
             display: NotchAgentSupport.limitDisplay(), focus: NotchAgentSupport.limitFocus(), now: Date()))
         let size = NotchAgentSupport.stripLineSize(height: provisional.compactActivityContentHeight, lines: lines.count)
-        let font = NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
-        let width = lines.map { (NotchAgentSupport.readingShape($0) as NSString).size(withAttributes: [.font: font]).width }
-            .max() ?? 0
+        let width = lines.enumerated().map { index, line in
+            let font = NSFont.monospacedDigitSystemFont(ofSize: NotchAgentSupport.stripLineSize(size, index: index, lines: lines.count),
+                                                        weight: .regular)
+            return (NotchAgentSupport.readingShape(line) as NSString).size(withAttributes: [.font: font]).width
+        }.max() ?? 0
         let reading = width.rounded(.up) + provisional.compactActivityEdgeInset(
             boxHeight: NotchAgentSupport.stripTextBox(size: size, lines: lines.count), radius: 0)
         // The marks on the other side, drawn as the strip draws them: two

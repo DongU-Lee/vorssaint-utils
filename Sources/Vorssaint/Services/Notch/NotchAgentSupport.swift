@@ -223,6 +223,11 @@ enum NotchAgentSupport {
     static func stripLineSize(height: CGFloat, lines: Int) -> CGFloat {
         lines > 1 ? min(11, (height - 6) / (1.1 * CGFloat(lines))) : stripTextSize(height: height)
     }
+    /// In a stack the share on top is a little smaller than the renewal
+    /// below it.
+    static func stripLineSize(_ size: CGFloat, index: Int, lines: Int) -> CGFloat {
+        lines > 1 && index == 0 ? size - 1.5 : size
+    }
     /// Stacked lines sit closer than their font's own leading, so the stack
     /// stays clear of the island's lower edge.
     static let stripLineSpacing: CGFloat = -2

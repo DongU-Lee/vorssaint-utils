@@ -63,9 +63,10 @@ struct NotchAgentStrip: View {
                             let size = NotchAgentSupport.stripLineSize(height: geometry.compactActivityContentHeight,
                                                                        lines: lines.count)
                             VStack(alignment: .trailing, spacing: lines.count > 1 ? NotchAgentSupport.stripLineSpacing : 0) {
-                                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                                     Text(line)
-                                        .font(.system(size: size, weight: .regular))
+                                        .font(.system(size: NotchAgentSupport.stripLineSize(size, index: index, lines: lines.count),
+                                                      weight: .regular))
                                         .monospacedDigit()
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.6)
