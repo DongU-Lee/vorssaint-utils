@@ -1913,6 +1913,7 @@ final class NotchService: ObservableObject {
             case .calendar: select(.calendar)
             case .commandBar: perform { CommandBarService.shared.show() }
             case .scratchpad: openScratchpad()
+            case .cleaningMode: perform { CleaningModeManager.shared.activate() }
             case .volume, .brightness, .keyboardLight: select(.controls)
             }
         }

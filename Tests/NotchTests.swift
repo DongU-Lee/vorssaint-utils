@@ -693,7 +693,7 @@ enum NotchTests {
         let screen = CGRect(x: 0, y: 0, width: 1710, height: 1112)
         let levels: [NotchControlItem] = [.volume, .brightness, .keyboardLight]
         let tiles: [NotchControlItem] = [.mixer, .keepAwake, .timer, .calendar, .microphone, .screenshot, .recording,
-                                         .speedTest, .panel, .commandBar, .scratchpad]
+                                         .speedTest, .panel, .commandBar, .scratchpad, .cleaningMode]
         let tile = NotchLayout.shortcutWidth, spacing = NotchLayout.shortcutSpacing
         var sizes: [(NotchSize, Double, Double)] = [(.compact, NotchSize.defaultWidth, NotchSize.defaultHeight),
                                                     (.spacious, NotchSize.defaultWidth, NotchSize.defaultHeight)]
@@ -793,7 +793,7 @@ enum NotchTests {
         let screen = CGRect(x: 0, y: 0, width: 1710, height: 1112)
         let levels: [NotchControlItem] = [.volume, .brightness, .keyboardLight]
         let tiles: [NotchControlItem] = [.mixer, .keepAwake, .timer, .calendar, .microphone, .screenshot, .recording,
-                                         .speedTest, .panel, .commandBar, .scratchpad]
+                                         .speedTest, .panel, .commandBar, .scratchpad, .cleaningMode]
         let tile = NotchLayout.shortcutWidth, row = NotchLayout.shortcutHeight, spacing = NotchLayout.shortcutSpacing
         var sizes: [(NotchSize, Double, Double)] = [(.compact, NotchSize.defaultWidth, NotchSize.defaultHeight),
                                                     (.spacious, NotchSize.defaultWidth, NotchSize.defaultHeight)]
@@ -2321,7 +2321,7 @@ enum NotchTests {
                "shortcut ordering tolerates duplicate and obsolete identifiers")
         suite.expect(!controls.contains(.volume) && !controls.contains(.screenshot), "individual controls can be hidden")
         defaults.set("", forKey: DefaultsKey.notchHiddenControls)
-        suite.expect(NotchSupport.controls(in: defaults).last == .scratchpad
+        suite.expect(NotchSupport.controls(in: defaults).contains(.scratchpad)
                && NotchQuickAction(id: NotchQuickAction.control(.scratchpad).id) == .control(.scratchpad)
                && NotchQuickAction.optionalActions.contains(.control(.scratchpad)),
                "the scratchpad shortcut can be shown among the controls and placed as a floating button")
@@ -2330,6 +2330,16 @@ enum NotchTests {
                && !NotchQuickAction.control(.scratchpad).isAvailable(in: defaults),
                "an uninstalled scratchpad leaves no island shortcut")
         defaults.set(true, forKey: AppFeature.scratchpad.availabilityKey)
+        suite.expect(NotchSupport.controls(in: defaults).last == .cleaningMode
+               && NotchQuickAction(id: NotchQuickAction.control(.cleaningMode).id) == .control(.cleaningMode)
+               && NotchQuickAction.optionalActions.contains(.control(.cleaningMode))
+               && NotchControlItem.cleaningMode.setupRequirement == .feature(.cleaningMode),
+               "the cleaning mode shortcut can be shown among the controls and placed as a floating button")
+        defaults.set(false, forKey: AppFeature.cleaningMode.availabilityKey)
+        suite.expect(!NotchSupport.controls(in: defaults).contains(.cleaningMode)
+               && !NotchQuickAction.control(.cleaningMode).isAvailable(in: defaults),
+               "an uninstalled cleaning mode leaves no island shortcut")
+        defaults.set(true, forKey: AppFeature.cleaningMode.availabilityKey)
         defaults.set("mixer,commandBar", forKey: DefaultsKey.notchHiddenControls)
         defaults.set("", forKey: DefaultsKey.notchControlOrder)
         let allModules = NotchModule.allCases

@@ -13,6 +13,7 @@ More reliable window switching, audio, notifications and display controls, with 
 - The window switcher can ignore hover selection while preserving clicks, keyboard navigation and hovered-window closing. Overflowing icon rows still slide at their edges. The option starts off. Thanks to @victorioustr.
 - Edge snapping can restore a window's previous size when it is dragged by its title bar, preserving manual resizing and using the size confirmed by the app. The option starts off and respects ignored apps. Thanks to @nisayera.
 - Both uninstaller result views offer a Select all checkbox with a mixed state, including optional rows when explicitly selected and preserving removal safeguards. Thanks to @heyseere.
+- Dynamic Island's controls can show a Cleaning Mode shortcut that locks the keyboard in one click, enabled under Content in its settings and placeable as a floating button.
 
 ### Changed
 - GIF exports can retain the full edited resolution and offer scale and frame-rate controls, with captions kept proportional at smaller sizes. Thanks to @COMEBACKISREAL.
