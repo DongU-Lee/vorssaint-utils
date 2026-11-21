@@ -197,8 +197,9 @@ struct NotchAgentGauge: View {
                             Text(part.number)
                                 .font(.system(size: NotchAgentSupport.stripNumberSize(size), weight: .regular))
                                 .gridColumnAlignment(.trailing)
+                            // Monospaced, so % and h take the same width.
                             Text(part.unit)
-                                .font(.system(size: NotchAgentSupport.stripUnitSize(size), weight: .regular))
+                                .font(.system(size: NotchAgentSupport.stripUnitSize(size), weight: .regular, design: .monospaced))
                                 .gridColumnAlignment(.leading)
                         }
                         .monospacedDigit()
