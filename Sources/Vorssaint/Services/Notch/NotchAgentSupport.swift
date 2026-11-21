@@ -232,11 +232,15 @@ enum NotchAgentSupport {
 
     /// A stacked line's number and the unit after it: "49%" is 49 and %,
     /// "34h" is 34 and h. A line that does not start with its number, as a
-    /// share some languages write "%49", stays whole as the number.
-    static func stripParts(_ line: String) -> (number: String, unit: String) {
+    /// share some languages write "%49", stays whole as the number. A spent
+    /// allowance is `full`: the strip draws a lock in the width of two
+    /// digits, "00", so a hundred never widens the column.
+    static func stripParts(_ line: String) -> (number: String, unit: String, full: Bool) {
         let number = line.prefix { $0.isNumber || $0 == "." || $0 == "," }
-        guard !number.isEmpty else { return (line, "") }
-        return (String(number), line.dropFirst(number.count).trimmingCharacters(in: .whitespaces))
+        guard !number.isEmpty else { return (line, "", false) }
+        let unit = line.dropFirst(number.count).trimmingCharacters(in: .whitespaces)
+        if number == "100", unit == "%" { return ("00", "", true) }
+        return (String(number), unit, false)
     }
     /// The resting island's ring, a mark as tall as the stack beside it.
     static let restingGaugeRing: CGFloat = 15

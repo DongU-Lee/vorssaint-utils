@@ -800,8 +800,8 @@ final class NotchService: ObservableObject {
         let size = NotchAgentSupport.stripLineSize(height: provisional.compactActivityContentHeight, lines: lines.count)
         func measure(_ text: String, _ size: CGFloat, monospaced: Bool = false) -> CGFloat {
             (NotchAgentSupport.readingShape(text) as NSString).size(withAttributes: [
-                .font: monospaced ? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
-                    : NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
+                .font: monospaced ? NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
+                    : NSFont.monospacedDigitSystemFont(ofSize: size, weight: .bold)
             ]).width
         }
         // A stack is two columns, its numbers and its units, as the strip draws them.

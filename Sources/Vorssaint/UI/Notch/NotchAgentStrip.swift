@@ -194,12 +194,23 @@ struct NotchAgentGauge: View {
                     ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                         let part = NotchAgentSupport.stripParts(line)
                         GridRow(alignment: .firstTextBaseline) {
-                            Text(part.number)
-                                .font(.system(size: NotchAgentSupport.stripNumberSize(size), weight: .regular))
-                                .gridColumnAlignment(.trailing)
+                            Group {
+                                if part.full {
+                                    // A lock in two digits' width: the allowance is spent.
+                                    Text(part.number).hidden().overlay {
+                                        Image(systemName: "lock.fill")
+                                            .font(.system(size: NotchAgentSupport.stripNumberSize(size) * 0.85, weight: .bold))
+                                    }
+                                    .accessibilityLabel(AgentFormat.percent(1))
+                                } else {
+                                    Text(part.number)
+                                }
+                            }
+                            .font(.system(size: NotchAgentSupport.stripNumberSize(size), weight: .bold))
+                            .gridColumnAlignment(.trailing)
                             // Monospaced, so % and h take the same width.
                             Text(part.unit)
-                                .font(.system(size: NotchAgentSupport.stripUnitSize(size), weight: .regular, design: .monospaced))
+                                .font(.system(size: NotchAgentSupport.stripUnitSize(size), weight: .bold, design: .monospaced))
                                 .gridColumnAlignment(.leading)
                         }
                         .monospacedDigit()
@@ -209,7 +220,7 @@ struct NotchAgentGauge: View {
                 }
             } else {
                 Text(lines.first ?? "")
-                    .font(.system(size: size, weight: .regular))
+                    .font(.system(size: size, weight: .bold))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
