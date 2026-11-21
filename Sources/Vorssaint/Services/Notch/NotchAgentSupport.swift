@@ -240,7 +240,7 @@ enum NotchAgentSupport {
                   let window = focusedLimit(snapshot.limits[provider], focus: focus, now: now) else { return elapsed() }
             let share = AgentFormat.percent(display == .used ? window.usedFraction : window.remainingFraction)
             guard let resets = AgentLimitSupport.displayedReset(window, now: now) else { return share }
-            return share + " · " + AgentFormat.countdown(to: resets, now: now, locale: .autoupdatingCurrent, units: 1)
+            return share + " · " + AgentFormat.shortCountdown(to: resets, now: now, locale: .autoupdatingCurrent)
         }
     }
 
@@ -428,11 +428,29 @@ enum AgentFormat {
     }
 
     /// How long until a window renews: days and hours, or hours and
-    /// minutes, never seconds on a reading that redraws every few. The
-    /// closed island keeps only the largest unit, rounded.
-    static func countdown(to date: Date, now: Date, locale: Locale, units: Int = 2) -> String {
+    /// minutes, never seconds on a reading that redraws every few.
+    static func countdown(to date: Date, now: Date, locale: Locale) -> String {
         let seconds = date.timeIntervalSince(now)
-        return duration(max(60, seconds), locale: locale, units: seconds >= 3600 ? units : 1)
+        return duration(max(60, seconds), locale: locale, units: seconds >= 3600 ? 2 : 1)
+    }
+
+    /// The same in one unit for the closed island: minutes under an hour,
+    /// hours under two days, then days, always rounded down so the renewal
+    /// is never closer than it reads.
+    static func shortCountdown(to date: Date, now: Date, locale: Locale) -> String {
+        let seconds = max(60, date.timeIntervalSince(now).isFinite ? date.timeIntervalSince(now) : 0)
+        // Only the chosen unit is allowed, or 33 hours would read as 1d 9h.
+        let (components, unit): (DateComponents, NSCalendar.Unit) = seconds >= 172_800
+            ? (DateComponents(day: Int(seconds / 86_400)), .day)
+            : seconds >= 3600 ? (DateComponents(hour: Int(seconds / 3600)), .hour)
+            : (DateComponents(minute: Int(seconds / 60)), .minute)
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.allowedUnits = unit
+        var calendar = Calendar.current
+        calendar.locale = locale
+        formatter.calendar = calendar
+        return formatter.string(from: components) ?? ""
     }
 
     /// A running stopwatch: "0:42", "12:05", "1:02:05".
