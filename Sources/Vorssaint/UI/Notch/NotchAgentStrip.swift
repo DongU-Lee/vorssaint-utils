@@ -186,17 +186,33 @@ struct NotchAgentGauge: View {
                                tint: gaugeTint, lineWidth: 2)
                     .frame(width: NotchAgentSupport.stripGaugeRing, height: NotchAgentSupport.stripGaugeRing)
             }
-            VStack(alignment: limit == nil ? .trailing : .leading,
-                   spacing: lines.count > 1 ? NotchAgentSupport.stripLineSpacing : 0) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                    Text(line)
-                        .font(.system(size: NotchAgentSupport.stripLineSize(size, index: index, lines: lines.count),
-                                      weight: .regular))
+            if lines.count > 1 {
+                // Numbers right-aligned in one column, units left-aligned in
+                // the next, each column in its own size.
+                Grid(alignment: .leading, horizontalSpacing: NotchAgentSupport.stripUnitSpacing,
+                     verticalSpacing: NotchAgentSupport.stripLineSpacing) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                        let part = NotchAgentSupport.stripParts(line)
+                        GridRow(alignment: .firstTextBaseline) {
+                            Text(part.number)
+                                .font(.system(size: NotchAgentSupport.stripNumberSize(size), weight: .regular))
+                                .gridColumnAlignment(.trailing)
+                            Text(part.unit)
+                                .font(.system(size: NotchAgentSupport.stripUnitSize(size), weight: .regular))
+                                .gridColumnAlignment(.leading)
+                        }
                         .monospacedDigit()
                         .lineLimit(1)
-                        .minimumScaleFactor(0.6)
                         .foregroundStyle(index > 0 ? AnyShapeStyle(.white.opacity(0.55)) : AnyShapeStyle(gaugeTint))
+                    }
                 }
+            } else {
+                Text(lines.first ?? "")
+                    .font(.system(size: size, weight: .regular))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .foregroundStyle(gaugeTint)
             }
         }
     }

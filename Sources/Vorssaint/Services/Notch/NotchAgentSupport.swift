@@ -223,10 +223,20 @@ enum NotchAgentSupport {
     static func stripLineSize(height: CGFloat, lines: Int) -> CGFloat {
         lines > 1 ? min(11, (height - 6) / (1.1 * CGFloat(lines))) : stripTextSize(height: height)
     }
-    /// In a stack the share on top leads, a size above the dimmer renewal
-    /// below it.
-    static func stripLineSize(_ size: CGFloat, index: Int, lines: Int) -> CGFloat {
-        lines > 1 ? size - (index == 0 ? 1 : 1.5) : size
+    /// In a stack the numbers share one size and the units a smaller one,
+    /// so "49 %" over "34 h" reads as two columns.
+    static func stripNumberSize(_ size: CGFloat) -> CGFloat { size - 1 }
+    static func stripUnitSize(_ size: CGFloat) -> CGFloat { ((size - 1) * 0.7).rounded() }
+    /// Between a number and its unit in a stack.
+    static let stripUnitSpacing: CGFloat = 1
+
+    /// A stacked line's number and the unit after it: "49%" is 49 and %,
+    /// "34h" is 34 and h. A line that does not start with its number, as a
+    /// share some languages write "%49", stays whole as the number.
+    static func stripParts(_ line: String) -> (number: String, unit: String) {
+        let number = line.prefix { $0.isNumber || $0 == "." || $0 == "," }
+        guard !number.isEmpty else { return (line, "") }
+        return (String(number), line.dropFirst(number.count).trimmingCharacters(in: .whitespaces))
     }
     /// The resting island's ring, a mark as tall as the stack beside it.
     static let restingGaugeRing: CGFloat = 15

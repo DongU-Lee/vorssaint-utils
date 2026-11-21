@@ -798,11 +798,17 @@ final class NotchService: ObservableObject {
             AgentUsageService.shared.snapshot, readout: NotchAgentSupport.readout(),
             display: NotchAgentSupport.limitDisplay(), focus: NotchAgentSupport.limitFocus(), now: Date()))
         let size = NotchAgentSupport.stripLineSize(height: provisional.compactActivityContentHeight, lines: lines.count)
-        let width = lines.enumerated().map { index, line in
-            let font = NSFont.monospacedDigitSystemFont(ofSize: NotchAgentSupport.stripLineSize(size, index: index, lines: lines.count),
-                                                        weight: .regular)
-            return (NotchAgentSupport.readingShape(line) as NSString).size(withAttributes: [.font: font]).width
-        }.max() ?? 0
+        func measure(_ text: String, _ size: CGFloat) -> CGFloat {
+            (NotchAgentSupport.readingShape(text) as NSString).size(withAttributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
+            ]).width
+        }
+        // A stack is two columns, its numbers and its units, as the strip draws them.
+        let width = lines.count > 1
+            ? (lines.map { measure(NotchAgentSupport.stripParts($0).number, NotchAgentSupport.stripNumberSize(size)) }.max() ?? 0)
+                + NotchAgentSupport.stripUnitSpacing
+                + (lines.map { measure(NotchAgentSupport.stripParts($0).unit, NotchAgentSupport.stripUnitSize(size)) }.max() ?? 0)
+            : lines.map { measure($0, size) }.max() ?? 0
         // A stack is an allowance, drawn beside its ring.
         let gauge = lines.count > 1 ? NotchAgentSupport.stripGaugeRing + NotchAgentSupport.stripGaugeSpacing : 0
         let reading = (width + gauge).rounded(.up) + provisional.compactActivityEdgeInset(
