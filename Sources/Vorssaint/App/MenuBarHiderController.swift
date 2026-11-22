@@ -43,6 +43,9 @@ final class MenuBarHiderController: NSObject {
     /// that follows needs no lookup and the bar is unrestricted as briefly
     /// as possible.
     private var clockClick: SystemClock.Item?
+    /// The always-visible apps the current restriction was built with.
+    private var alwaysVisible = MenuBarAlwaysVisible.bundleIDs()
+    private var defaultsObserver: NSObjectProtocol?
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -56,6 +59,15 @@ final class MenuBarHiderController: NSObject {
         clockMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
             self?.handleClockEvent(event)
         }
+        // A change to the always-visible list applies to the bar right away.
+        defaultsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
+                                                                  object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            let current = MenuBarAlwaysVisible.bundleIDs()
+            guard current != self.alwaysVisible else { return }
+            self.alwaysVisible = current
+            if self.isCollapsed { self.collapse(revealing: self.revealedBundleID) }
+        }
     }
 
     /// Drops the restriction so the whole bar shows again.
@@ -63,6 +75,8 @@ final class MenuBarHiderController: NSObject {
         stopRehideMonitor()
         if let clockMonitor { NSEvent.removeMonitor(clockMonitor) }
         clockMonitor = nil
+        if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
+        defaultsObserver = nil
         assertion?.invalidate()
         assertion = nil
         NSStatusBar.system.removeStatusItem(statusItem)
@@ -72,14 +86,14 @@ final class MenuBarHiderController: NSObject {
 
     private var isCollapsed: Bool { assertion != nil }
 
-    /// Hides every app's icons except ours and, when given, one app the
-    /// person just picked from the menu.
+    /// Hides every app's icons except ours, the always-visible apps and,
+    /// when given, one app the person just picked from the menu.
     private func collapse(revealing bundleID: String? = nil, then done: (() -> Void)? = nil) {
         guard NativeMenuBarVisibility.isAvailable else { return updateIcon() }
         generation += 1
         let generation = self.generation
         revealedBundleID = bundleID
-        let allowed = [ownBundleID] + (bundleID.map { [$0] } ?? [])
+        let allowed = [ownBundleID] + alwaysVisible + (bundleID.map { [$0] } ?? [])
         NativeMenuBarVisibility.activate(allowing: allowed) { [weak self] newAssertion in
             guard let self, generation == self.generation else {
                 newAssertion?.invalidate()
@@ -206,7 +220,7 @@ final class MenuBarHiderController: NSObject {
         guard NativeMenuBarVisibility.isAvailable else { return .unavailable }
         guard isCollapsed else { return .expanded }
         guard AXIsProcessTrusted() else { return .needsAccess }
-        return .collapsed(MenuBarExtra.hiddenCandidates(excludingBundleID: ownBundleID))
+        return .collapsed(MenuBarExtra.hiddenCandidates(excludingBundleIDs: Set([ownBundleID] + alwaysVisible)))
     }
 
     /// Brings the picked app's icons back for a moment, clicks the one that
@@ -417,13 +431,23 @@ final class MenuBarExtra: NSObject {
         return CGRect(origin: origin, size: size)
     }
 
-    /// Every other app's menu bar icon. macOS's own items are left out: they
-    /// are never hidden.
-    static func hiddenCandidates(excludingBundleID ownBundleID: String) -> [MenuBarExtra] {
+    /// Every hidden app's menu bar icon. macOS's own items, ours and the
+    /// always-visible apps' are left out: they are never hidden.
+    static func hiddenCandidates(excludingBundleIDs excluded: Set<String>) -> [MenuBarExtra] {
+        apps(excludingBundleIDs: excluded).flatMap(extras(of:))
+    }
+
+    /// The apps with an icon in the menu bar now, by name: the ones the tray
+    /// can hide, and so the ones Settings offers to keep visible. Reading
+    /// the icons needs Accessibility; without it the list is empty.
+    static func appsShowingIcons(excludingBundleIDs excluded: Set<String>) -> [NSRunningApplication] {
+        apps(excludingBundleIDs: excluded).filter { !extras(of: $0).isEmpty }
+    }
+
+    private static func apps(excludingBundleIDs excluded: Set<String>) -> [NSRunningApplication] {
         NSWorkspace.shared.runningApplications
-            .filter { $0.bundleIdentifier != ownBundleID && !isSystemProcess($0) }
+            .filter { !excluded.contains($0.bundleIdentifier ?? "") && !isSystemProcess($0) }
             .sorted { ($0.localizedName ?? "") .localizedStandardCompare($1.localizedName ?? "") == .orderedAscending }
-            .flatMap(extras(of:))
     }
 
     /// The same icon read again: the element captured while it was hidden
@@ -771,6 +795,25 @@ enum SystemClock {
     private static func children(of element: AXUIElement) -> [AXUIElement] {
         value(of: element, kAXChildrenAttribute) as? [AXUIElement] ?? []
     }
+}
+
+// MARK: - Apps the tray never hides
+
+/// Apps whose icons stay in the menu bar while the rest fold into the tray,
+/// kept as comma-separated bundle ids in the app's preferences, so the list
+/// outlives a rebuild. It starts empty and is filled in Settings.
+enum MenuBarAlwaysVisible {
+    static func bundleIDs(in defaults: UserDefaults = .standard) -> [String] {
+        parse(defaults.string(forKey: DefaultsKey.menuBarAlwaysVisibleApps) ?? "")
+    }
+
+    static func parse(_ value: String) -> [String] {
+        var seen = Set<String>()
+        return value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    static func value(_ bundleIDs: [String]) -> String { bundleIDs.joined(separator: ",") }
 }
 
 // MARK: - macOS 27's menu bar allow-list (private MenuBarClientCore)

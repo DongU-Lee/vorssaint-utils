@@ -34,6 +34,9 @@ struct GeneralToolSettings: View {
                         }
                     }
                     .settingsSectionAnchor(.panelConfiguration, cornerRadius: 16)
+                    if NativeMenuBarVisibility.isAvailable {
+                        MenuBarAlwaysVisibleCard()
+                    }
                 case .mixer:
                     MixerSection(settingsMode: true)
                         .settingsSectionAnchor(.mixer, cornerRadius: 16)
@@ -311,5 +314,86 @@ private struct MusicBlockingSettings: View {
             return
         }
         replacementPath = url.path
+    }
+}
+
+/// Apps the menu bar tray never hides: each with its icon and a way to take
+/// it off, and a menu of the apps with an icon in the menu bar now to add.
+struct MenuBarAlwaysVisibleCard: View {
+    @AppStorage(DefaultsKey.menuBarAlwaysVisibleApps) private var stored = ""
+    /// Apps with a menu bar icon that are not listed yet, read when the card
+    /// shows, when the list changes and when an app opens or quits.
+    @State private var candidates: [(id: String, name: String)] = []
+    @State private var canReadIcons = AXIsProcessTrusted()
+
+    private var bundleIDs: [String] { MenuBarAlwaysVisible.parse(stored) }
+
+    private func refresh() {
+        canReadIcons = AXIsProcessTrusted()
+        let excluded = Set([Bundle.main.bundleIdentifier ?? ""] + bundleIDs)
+        candidates = MenuBarExtra.appsShowingIcons(excludingBundleIDs: excluded).compactMap { app in
+            app.bundleIdentifier.map { ($0, app.localizedName ?? $0) }
+        }
+    }
+
+    var body: some View {
+        SettingsCard(title: "메뉴 막대 정리(트레이): 항상 보이기") {
+            Text("이 앱들의 아이콘은 트레이로 숨기지 않고 메뉴 막대에 그대로 둡니다.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if bundleIDs.isEmpty {
+                Text("항상 보이는 앱 없음").font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach(bundleIDs, id: \.self) { id in
+                HStack(spacing: 8) {
+                    Image(nsImage: Self.icon(id)).resizable().frame(width: 20, height: 20)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(Self.name(id))
+                        Text(id).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        stored = MenuBarAlwaysVisible.value(bundleIDs.filter { $0 != id })
+                    } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("목록에서 빼기")
+                    .accessibilityLabel("\(Self.name(id)) 목록에서 빼기")
+                }
+            }
+            Menu("메뉴 막대의 앱 추가") {
+                if !canReadIcons {
+                    Text("메뉴 막대 아이콘을 읽으려면 손쓰기 권한이 필요합니다")
+                } else if candidates.isEmpty {
+                    Text("추가할 수 있는 앱 없음")
+                }
+                ForEach(candidates, id: \.id) { app in
+                    Button(app.name) { stored = MenuBarAlwaysVisible.value(bundleIDs + [app.id]) }
+                }
+            }
+            .fixedSize()
+        }
+        .onAppear(perform: refresh)
+        .onChange(of: stored) { _, _ in refresh() }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)) { _ in refresh() }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didTerminateApplicationNotification)) { _ in refresh() }
+    }
+
+    /// The app's own name, from its bundle when installed, else the running
+    /// app's, else the bundle id itself.
+    private static func name(_ id: String) -> String {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        }
+        return NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.localizedName ?? id
+    }
+
+    private static func icon(_ id: String) -> NSImage {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+            return NSWorkspace.shared.icon(forFile: url.path)
+        }
+        return NSImage(systemSymbolName: "app.dashed", accessibilityDescription: nil) ?? NSImage()
     }
 }
